@@ -1,0 +1,54 @@
+@import "tailwindcss";
+
+/* ————— The Brain College design tokens ————— */
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Fraunces", ui-serif, Georgia, serif;
+
+  /* surface layers */
+  --color-bg: #0b0d10;
+  --color-surface: #12151a;
+  --color-raised: #1a1e25;
+  --color-overlay: #21262f;
+  --color-line: #262b33;
+  --color-line-strong: #333a45;
+
+  /* text */
+  --color-ink: #e8eaed;
+  --color-ink-muted: #9aa3ae;
+  --color-ink-faint: #6b7480;
+
+  /* semantics */
+  --color-accent: #2dd4bf;
+  --color-accent-deep: #14b8a6;
+  --color-warn: #f5b84d;
+  --color-ok: #4ade80;
+  --color-danger: #f87171;
+  --color-info: #7dd3fc;
+
+  --radius-card: 10px;
+  --radius-control: 8px;
+}
+
+html, body, #root { height: 100%; }
+body {
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* scrollbars that match the theme */
+* { scrollbar-width: thin; scrollbar-color: var(--color-line-strong) transparent; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb { background: var(--color-line-strong); border-radius: 6px; }
+*::-webkit-scrollbar-track { background: transparent; }
+
+/* focus discipline */
+:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; border-radius: 4px; }
+
+::selection { background: color-mix(in srgb, var(--color-accent) 30%, transparent); }
+
+/* video elements never overflow their card */
+video { max-width: 100%; display: block; }
