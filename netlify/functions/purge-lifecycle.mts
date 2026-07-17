@@ -43,9 +43,10 @@ export default async () => {
       if (purgeBecauseScheduled || purgeBecauseStale) {
         const { data: scenes } = await db.from('scenes').select('id, storage_path').eq('video_id', v.id)
         const paths = (scenes ?? []).map((s) => s.storage_path).filter(Boolean) as string[]
+        if (v.preview_path) paths.push(v.preview_path)
         if (paths.length) await db.storage.from('media').remove(paths)
         await db.from('scenes').update({ storage_path: null }).eq('video_id', v.id)
-        await db.from('videos').update({ scenes_purged_at: new Date().toISOString() }).eq('id', v.id)
+        await db.from('videos').update({ scenes_purged_at: new Date().toISOString(), preview_path: null }).eq('id', v.id)
         events.push({ video_id: v.id, type: 'scenes_purged', payload: { files: paths.length, reason: purgeBecauseStale ? 'stale' : 'scheduled' } })
       }
     }

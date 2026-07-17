@@ -20,6 +20,7 @@ export interface Video {
   final_uploaded_at: string | null
   scenes_purged_at: string | null
   final_purged_at: string | null
+  preview_path: string | null
   qc: { pass?: number; fail?: number; failure_classes?: Record<string, number>; notes?: string } | null
   created_at: string
   updated_at: string
