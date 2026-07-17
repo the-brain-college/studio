@@ -109,22 +109,89 @@ export function useAddFeedback() {
       if (error) throw new Error(error.message)
       await logEvent(row.video_id, `feedback_${row.kind}`, { stars: row.stars ?? null })
     },
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['feedback'] }),
+    // optimistic: a Reject moves the card the instant the button is pressed
+    onMutate: async (row) => {
+      await qc.cancelQueries({ queryKey: ['feedback'] })
+      const prev = qc.getQueryData<Feedback[]>(['feedback'])
+      const ghost: Feedback = {
+        id: -Date.now(), video_id: row.video_id, kind: row.kind, stars: row.stars ?? null,
+        comment: row.comment ?? null, created_at: new Date().toISOString(), acknowledged_at: null, retracted_at: null,
+      }
+      qc.setQueryData<Feedback[]>(['feedback'], (old) => [ghost, ...(old ?? [])])
+      return { prev }
+    },
+    onError: (_e, _v, ctx) => ctx?.prev && qc.setQueryData(['feedback'], ctx.prev),
+    onSettled: () => void qc.invalidateQueries({ queryKey: ['feedback'] }),
   })
 }
 
-/** Record that Filipe pulled this video's scenes; silently ignored once set or when RLS forbids (scheduled+). */
-export function useMarkDownloaded() {
+/** Undo a rejection: retract every active reject on the video (audit trail stays). */
+export function useUndoReject() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (video: Video) => {
-      if (video.downloaded_at) return
-      await supabase.from('videos').update({ downloaded_at: new Date().toISOString() }).eq('id', video.id)
-      await logEvent(video.id, 'scenes_downloaded')
+      const { error } = await supabase.from('feedback')
+        .update({ retracted_at: new Date().toISOString() })
+        .eq('video_id', video.id).eq('kind', 'reject').is('retracted_at', null)
+      if (error) throw new Error(error.message)
+      await logEvent(video.id, 'feedback_reject_undone')
     },
-    onSuccess: () => {
+    onMutate: async (video) => {
+      await qc.cancelQueries({ queryKey: ['feedback'] })
+      const prev = qc.getQueryData<Feedback[]>(['feedback'])
+      const now = new Date().toISOString()
+      qc.setQueryData<Feedback[]>(['feedback'], (old) =>
+        (old ?? []).map((f) => (f.video_id === video.id && f.kind === 'reject' && !f.retracted_at ? { ...f, retracted_at: now } : f)))
+      return { prev }
+    },
+    onError: (_e, _v, ctx) => ctx?.prev && qc.setQueryData(['feedback'], ctx.prev),
+    onSettled: () => void qc.invalidateQueries({ queryKey: ['feedback'] }),
+  })
+}
+
+function patchVideoCaches(qc: ReturnType<typeof useQueryClient>, id: string, patch: Partial<Video>) {
+  qc.setQueryData<Video[]>(['videos'], (old) => old?.map((v) => (v.id === id ? { ...v, ...patch } : v)))
+  qc.setQueriesData<Video>({ queryKey: ['video'] }, (old) => (old && old.id === id ? { ...old, ...patch } : old))
+}
+
+/** Optimistic verdict/state mutation on a video row (approve, move back to New, mark downloaded). */
+function useVideoPatch(event: string, makePatch: (v: Video) => Partial<Video> | null) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (video: Video) => {
+      const patch = makePatch(video)
+      if (!patch) return
+      const { error } = await supabase.from('videos').update(patch).eq('id', video.id)
+      if (error) throw new Error(error.message)
+      await logEvent(video.id, event)
+    },
+    onMutate: async (video) => {
+      const patch = makePatch(video)
+      if (!patch) return {}
+      await qc.cancelQueries({ queryKey: ['videos'] })
+      const prevList = qc.getQueryData<Video[]>(['videos'])
+      patchVideoCaches(qc, video.id, patch)
+      return { prevList }
+    },
+    onError: (_e, _v, ctx) => ctx?.prevList && qc.setQueryData(['videos'], ctx.prevList),
+    onSettled: () => {
       void qc.invalidateQueries({ queryKey: ['videos'] })
       void qc.invalidateQueries({ queryKey: ['video'] })
     },
   })
+}
+
+/** Approve = the verdict. The download that follows is handled by the approve flow. */
+export function useApproveVideo() {
+  return useVideoPatch('approved', () => ({ approved_at: new Date().toISOString() }))
+}
+
+/** Revert an approval: the video goes back to New. The downloaded file fact is kept. */
+export function useUnapproveVideo() {
+  return useVideoPatch('approval_undone', () => ({ approved_at: null }))
+}
+
+/** Record that the scenes ZIP actually landed on Filipe's disk. */
+export function useMarkDownloaded() {
+  return useVideoPatch('scenes_downloaded', (v) => (v.downloaded_at ? null : { downloaded_at: new Date().toISOString() }))
 }

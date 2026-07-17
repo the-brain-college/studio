@@ -16,12 +16,14 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     <button
       ref={ref}
       className={cx(
-        'inline-flex items-center justify-center gap-2 font-medium transition-colors rounded-(--radius-control) disabled:opacity-45 disabled:cursor-not-allowed whitespace-nowrap',
+        'inline-flex select-none items-center justify-center gap-2 whitespace-nowrap rounded-(--radius-control) font-medium',
+        'transition-all duration-150 ease-out active:scale-[0.97] disabled:pointer-events-none disabled:opacity-45',
+        'outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-bg',
         size === 'md' ? 'h-9 px-4 text-[13px]' : 'h-7 px-2.5 text-xs',
-        variant === 'primary' && 'bg-accent text-[#04211d] hover:bg-accent-deep',
-        variant === 'secondary' && 'bg-raised border border-line hover:border-line-strong hover:bg-overlay text-ink',
-        variant === 'ghost' && 'text-ink-muted hover:text-ink hover:bg-raised',
-        variant === 'danger' && 'bg-danger/10 border border-danger/40 text-danger hover:bg-danger/20',
+        variant === 'primary' && 'bg-accent text-[#04211d] shadow-sm shadow-accent/20 hover:bg-accent-deep hover:shadow-md hover:shadow-accent/25',
+        variant === 'secondary' && 'border border-line bg-raised text-ink hover:border-line-strong hover:bg-overlay',
+        variant === 'ghost' && 'text-ink-muted hover:bg-raised hover:text-ink',
+        variant === 'danger' && 'border border-danger/40 bg-danger/10 text-danger hover:bg-danger/20 focus-visible:ring-danger/50',
         className,
       )}
       {...props}
@@ -31,7 +33,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
 
 /* ————— Card ————— */
 export function Card({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cx('bg-surface border border-line rounded-(--radius-card)', className)} {...props} />
+  return <div className={cx('rounded-(--radius-card) border border-line bg-surface shadow-sm shadow-black/20 transition-shadow duration-200', className)} {...props} />
 }
 
 /* ————— Badge ————— */
@@ -62,7 +64,7 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
       ref={ref}
       className={cx(
         'h-9 w-full rounded-(--radius-control) border border-line bg-raised px-3 text-[13px] text-ink placeholder:text-ink-faint',
-        'focus:border-accent/60 focus:outline-none',
+        'transition-[border-color,box-shadow] duration-150 focus:border-accent/60 focus:outline-none focus:ring-2 focus:ring-accent/25',
         className,
       )}
       {...props}
@@ -75,7 +77,7 @@ export function Textarea({ className, ...props }: React.TextareaHTMLAttributes<H
     <textarea
       className={cx(
         'w-full rounded-(--radius-control) border border-line bg-raised px-3 py-2 text-[13px] text-ink placeholder:text-ink-faint',
-        'focus:border-accent/60 focus:outline-none resize-y min-h-20',
+        'min-h-20 resize-y transition-[border-color,box-shadow] duration-150 focus:border-accent/60 focus:outline-none focus:ring-2 focus:ring-accent/25',
         className,
       )}
       {...props}

@@ -22,6 +22,7 @@ export interface Video {
   final_purged_at: string | null
   preview_path: string | null
   downloaded_at: string | null
+  approved_at: string | null
   qc: { pass?: number; fail?: number; failure_classes?: Record<string, number>; notes?: string } | null
   created_at: string
   updated_at: string
@@ -37,6 +38,7 @@ export interface Feedback {
   comment: string | null
   created_at: string
   acknowledged_at: string | null
+  retracted_at: string | null
 }
 
 export interface Scene {
