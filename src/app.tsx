@@ -7,8 +7,8 @@ import { Badge, Button } from '@/components/ui'
 import { GROUP_META, GROUP_ORDER, rejectedIdSet, workflowGroup, type WorkflowGroup } from '@/features/videos/video-utils'
 
 const NAV = [
-  { to: '/videos', label: 'Video Management', icon: FilmIcon },
   { to: '/production', label: 'Production', icon: FactoryIcon },
+  { to: '/videos', label: 'Video Management', icon: FilmIcon },
   { to: '/feedback', label: 'Feedback', icon: ChatIcon },
   { to: '/calendar', label: 'Calendar', icon: CalendarIcon },
   { to: '/analytics', label: 'Analytics', icon: ChartIcon },
