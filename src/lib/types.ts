@@ -32,6 +32,57 @@ export interface Video {
 
 export type FeedbackKind = 'reject' | 'rating' | 'note'
 
+export type OrderKind = 'copy' | 'scratch'
+export type OrderStatus = 'pool' | 'queued' | 'in_production' | 'produced' | 'failed' | 'canceled'
+export type Adaptation = 'bridge' | 'verbatim' | 'full'
+
+export interface Order {
+  id: string
+  kind: OrderKind
+  format: string | null
+  adaptation: Adaptation
+  reference_path: string | null
+  reference_url: string | null
+  notes: string | null
+  status: OrderStatus
+  video_id: string | null
+  priority: number
+  created_at: string
+  produced_at: string | null
+}
+
+export type CommandType = 'order_produce' | 'pause_auto' | 'resume_auto' | 'set_goal' | 'run_feedback_intake'
+
+export interface Command {
+  id: number
+  type: CommandType
+  payload: Record<string, unknown>
+  status: 'pending' | 'picked_up' | 'done' | 'failed'
+  result: string | null
+  created_at: string
+  picked_up_at: string | null
+  done_at: string | null
+}
+
+export interface HeartbeatState {
+  at: string
+  pool: Record<string, number>
+  executing: Array<{ id: number; kind: string; slot: string | null }>
+  produced_scenes_today: number
+}
+
+export interface FactoryStatus {
+  alive_at: string
+  auto_run: boolean
+  activity?: string
+  goals?: ProductionGoals | null
+}
+
+export interface ProductionGoals {
+  date?: string
+  per_format?: Record<string, number>
+}
+
 export interface Feedback {
   id: number
   video_id: string

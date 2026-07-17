@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useSearchParams } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
-import { useAllFeedback, useAnalytics, useAppState, useVideos } from '@/lib/queries'
+import { useAllFeedback, useAnalytics, useAppState, useFactoryState, useVideos } from '@/lib/queries'
 import { fmtBytes } from '@/lib/time'
 import { Badge, Button } from '@/components/ui'
 import { GROUP_META, GROUP_ORDER, rejectedIdSet, workflowGroup, type WorkflowGroup } from '@/features/videos/video-utils'
 
 const NAV = [
   { to: '/videos', label: 'Video Management', icon: FilmIcon },
+  { to: '/production', label: 'Production', icon: FactoryIcon },
   { to: '/feedback', label: 'Feedback', icon: ChatIcon },
   { to: '/calendar', label: 'Calendar', icon: CalendarIcon },
   { to: '/analytics', label: 'Analytics', icon: ChartIcon },
@@ -56,13 +57,14 @@ export default function App() {
                 title={label}
                 className={({ isActive }) =>
                   [
-                    'flex items-center gap-3 rounded-(--radius-control) px-3 py-2.5 text-[13px] font-medium transition-colors',
+                    'relative flex items-center gap-3 rounded-(--radius-control) px-3 py-2.5 text-[13px] font-medium transition-colors',
                     isActive ? 'bg-accent/10 text-accent' : 'text-ink-muted hover:bg-raised hover:text-ink',
                   ].join(' ')
                 }
               >
                 <Icon className="h-4.5 w-4.5 shrink-0" />
                 {(open || mobileOpen) && <span className="truncate">{label}</span>}
+                {to === '/production' && <FactoryDot expanded={open || mobileOpen} />}
               </NavLink>
               {to === '/videos' && (open || mobileOpen) && <WorkflowLinks />}
             </div>
@@ -107,6 +109,18 @@ export default function App() {
       </div>
     </div>
   )
+}
+
+/** Green = factory brain live; amber = PC on but Claude idle; gray = PC offline. */
+function FactoryDot({ expanded }: { expanded: boolean }) {
+  const { data: fs } = useFactoryState()
+  const now = Date.now()
+  const stale = 2.5 * 60_000
+  const pc = fs?.heartbeat && now - +new Date(fs.heartbeat.at) < stale
+  const brain = fs?.status && now - +new Date(fs.status.alive_at) < stale
+  const color = brain ? 'bg-ok' : pc ? 'bg-warn' : 'bg-line-strong'
+  const title = brain ? 'Factory live' : pc ? 'PC on, Claude idle' : 'Factory offline'
+  return <span title={title} className={`${expanded ? 'ml-auto' : 'absolute right-1 top-1'} h-2 w-2 shrink-0 rounded-full ${color}`} />
 }
 
 /** The workflow at a glance: each stage of Filipe's week is one click, with live counts. */
@@ -225,6 +239,14 @@ function BookIcon({ className }: IconProps) {
     <svg viewBox="0 0 24 24" className={className}>
       <path d="M4 5a2 2 0 0 1 2-2h13v18H6a2 2 0 0 0-2 2z" {...S} />
       <path d="M4 19a2 2 0 0 1 2-2h13" {...S} />
+    </svg>
+  )
+}
+function FactoryIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className}>
+      <path d="M3 21V9l6 4V9l6 4V5a2 2 0 0 1 4 0v16z" {...S} />
+      <path d="M3 21h18M7 17h.01M12 17h.01M16 17h.01" {...S} />
     </svg>
   )
 }

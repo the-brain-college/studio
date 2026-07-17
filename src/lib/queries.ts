@@ -1,6 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './supabase'
-import type { AnalyticsSummary, Feedback, FeedbackKind, RailwayChip, Schedule, Scene, Video } from './types'
+import type {
+  AnalyticsSummary, Command, CommandType, Feedback, FeedbackKind, HeartbeatState,
+  FactoryStatus, Order, ProductionGoals, RailwayChip, Schedule, Scene, Video,
+} from './types'
 
 async function must<T>(p: PromiseLike<{ data: T | null; error: { message: string } | null }>): Promise<T> {
   const { data, error } = await p
@@ -90,6 +93,93 @@ export function useUpdateVideo(slug: string) {
 
 export async function logEvent(video_id: string | null, type: string, payload: Record<string, unknown> = {}) {
   await supabase.from('events').insert({ video_id, type, payload })
+}
+
+/* ————— mission control: orders, commands, factory state ————— */
+
+export function useOrders() {
+  return useQuery({
+    queryKey: ['orders'],
+    refetchInterval: 30_000,
+    queryFn: () => must<Order[]>(supabase.from('orders').select('*').order('created_at', { ascending: false })),
+  })
+}
+
+export function useCreateOrder() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (row: Partial<Order>) => {
+      const { data, error } = await supabase.from('orders').insert(row).select().single()
+      if (error) throw new Error(error.message)
+      return data as Order
+    },
+    onSettled: () => void qc.invalidateQueries({ queryKey: ['orders'] }),
+  })
+}
+
+export function useUpdateOrder() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, patch }: { id: string; patch: Partial<Order> }) => {
+      const { error } = await supabase.from('orders').update(patch).eq('id', id)
+      if (error) throw new Error(error.message)
+    },
+    onSettled: () => void qc.invalidateQueries({ queryKey: ['orders'] }),
+  })
+}
+
+export function useCommands(limit = 12) {
+  return useQuery({
+    queryKey: ['commands'],
+    refetchInterval: 15_000,
+    queryFn: () => must<Command[]>(supabase.from('commands').select('*').order('created_at', { ascending: false }).limit(limit)),
+  })
+}
+
+export function useSendCommand() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ type, payload }: { type: CommandType; payload?: Record<string, unknown> }) => {
+      const { data, error } = await supabase.from('commands').insert({ type, payload: payload ?? {} }).select().single()
+      if (error) throw new Error(error.message)
+      return data as Command
+    },
+    onSettled: () => void qc.invalidateQueries({ queryKey: ['commands'] }),
+  })
+}
+
+/** PC pulse (heartbeat) + factory-brain status, refreshed together every 20s. */
+export function useFactoryState() {
+  return useQuery({
+    queryKey: ['factory-state'],
+    refetchInterval: 20_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('app_state').select('key,value')
+        .in('key', ['heartbeat', 'factory_status', 'production_goals'])
+      if (error) throw new Error(error.message)
+      const m = new Map((data ?? []).map((r) => [r.key, r.value]))
+      return {
+        heartbeat: (m.get('heartbeat') ?? null) as HeartbeatState | null,
+        status: (m.get('factory_status') ?? null) as FactoryStatus | null,
+        goals: (m.get('production_goals') ?? null) as ProductionGoals | null,
+      }
+    },
+  })
+}
+
+/** Upload a reference video for the copy pool: storage first, then the order row. */
+export async function uploadReference(file: File, fields: { notes?: string; adaptation?: string; reference_url?: string }): Promise<Order> {
+  const id = crypto.randomUUID()
+  const path = `references/${id}.mp4`
+  const { error: upErr } = await supabase.storage.from('media').upload(path, file, { contentType: 'video/mp4' })
+  if (upErr) throw new Error(upErr.message)
+  const { data, error } = await supabase.from('orders').insert({
+    id, kind: 'copy', status: 'pool', reference_path: path,
+    adaptation: fields.adaptation ?? 'bridge',
+    notes: fields.notes || null, reference_url: fields.reference_url || null,
+  }).select().single()
+  if (error) throw new Error(error.message)
+  return data as Order
 }
 
 /* ————— feedback: Filipe's verdicts are the factory's most important input ————— */
