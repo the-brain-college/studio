@@ -10,7 +10,8 @@ import type { Adaptation, Command, Order } from '@/lib/types'
 import { fmtDate } from '@/lib/time'
 import { Badge, Button, Card, Empty, Input, PageHeader, Spinner } from '@/components/ui'
 
-const STALE_MS = 2.5 * 60_000
+const STALE_MS = 2.5 * 60_000        // PC pulse beats every 60s — 2.5 min of silence is real
+const BRAIN_STALE_MS = 5 * 60_000    // the brain stamps on its ~3-min cron — don't cry wolf between wakes
 const GRACE_MS = 2 * 60_000
 
 export function ProductionPage() {
@@ -40,7 +41,7 @@ function MissionControl() {
 
   const now = Date.now()
   const pcAlive = fs?.heartbeat && now - +new Date(fs.heartbeat.at) < STALE_MS
-  const brainAlive = fs?.status && now - +new Date(fs.status.alive_at) < STALE_MS
+  const brainAlive = fs?.status && now - +new Date(fs.status.alive_at) < BRAIN_STALE_MS
   const autoRun = fs?.status?.auto_run ?? true
   const pool = fs?.heartbeat?.pool ?? {}
   const sum = (pred: (k: string) => boolean) =>
