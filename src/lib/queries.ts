@@ -155,26 +155,27 @@ export function useFactoryState() {
     refetchInterval: 20_000,
     queryFn: async () => {
       const { data, error } = await supabase.from('app_state').select('key,value')
-        .in('key', ['heartbeat', 'factory_status', 'production_goals'])
+        .in('key', ['heartbeat', 'factory_status', 'production_goals', 'factory_alert'])
       if (error) throw new Error(error.message)
       const m = new Map((data ?? []).map((r) => [r.key, r.value]))
       return {
         heartbeat: (m.get('heartbeat') ?? null) as HeartbeatState | null,
         status: (m.get('factory_status') ?? null) as FactoryStatus | null,
         goals: (m.get('production_goals') ?? null) as ProductionGoals | null,
+        alert: (m.get('factory_alert') ?? null) as { level: string; message: string; at: string } | null,
       }
     },
   })
 }
 
-/** Upload a reference video for the copy pool: storage first, then the order row. */
+/** Upload a reference video and inject it into the FIFO: storage first, then the queued order row. */
 export async function uploadReference(file: File, fields: { notes?: string; adaptation?: string; reference_url?: string }): Promise<Order> {
   const id = crypto.randomUUID()
   const path = `references/${id}.mp4`
   const { error: upErr } = await supabase.storage.from('media').upload(path, file, { contentType: 'video/mp4' })
   if (upErr) throw new Error(upErr.message)
   const { data, error } = await supabase.from('orders').insert({
-    id, kind: 'copy', status: 'pool', reference_path: path,
+    id, kind: 'copy', status: 'queued', reference_path: path,
     adaptation: fields.adaptation ?? 'bridge',
     notes: fields.notes || null, reference_url: fields.reference_url || null,
   }).select().single()

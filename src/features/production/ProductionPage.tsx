@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import {
   useCommands, useCreateOrder, useFactoryState, useOrders, useSendCommand, useUpdateOrder, useVideos, uploadReference,
@@ -8,23 +8,22 @@ import { supabase } from '@/lib/supabase'
 import { useToast } from '@/components/toast'
 import type { Adaptation, Command, Order } from '@/lib/types'
 import { fmtDate } from '@/lib/time'
-import { Badge, Button, Card, Empty, Input, PageHeader, Spinner, Textarea } from '@/components/ui'
+import { Badge, Button, Card, Empty, Input, PageHeader, Spinner } from '@/components/ui'
 
 const STALE_MS = 2.5 * 60_000
+const GRACE_MS = 2 * 60_000
 
 export function ProductionPage() {
   return (
     <>
       <PageHeader
         title="Production"
-        sub="Mission control for the factory: what's running, what's ordered, and the copy pool — all from here."
+        sub="Mission control for the factory: what's running, and the FIFO of videos to make — all from here."
       />
       <div className="space-y-6">
         <MissionControl />
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[420px_1fr]">
-          <OrderForm />
-          <CopyPool />
-        </div>
+        <InjectBar />
+        <Queue />
         <CommandLog />
       </div>
     </>
@@ -184,77 +183,68 @@ function GoalsEditor({ onDone }: { onDone: () => void }) {
   )
 }
 
-/* ————— order form ————— */
+/* ————— inject bar ————— */
 
-function OrderForm() {
+function InjectBar() {
   const create = useCreateOrder()
-  const send = useSendCommand()
+  const qc = useQueryClient()
   const toast = useToast()
   const fileRef = useRef<HTMLInputElement>(null)
-  const [kind, setKind] = useState<'copy' | 'scratch'>('copy')
+  const [copyOpen, setCopyOpen] = useState(false)
   const [file, setFile] = useState<File | null>(null)
-  const [notes, setNotes] = useState('')
   const [refUrl, setRefUrl] = useState('')
+  const [note, setNote] = useState('')
   const [adaptation, setAdaptation] = useState<Adaptation>('bridge')
-  const [format, setFormat] = useState('A')
-  const [produceNow, setProduceNow] = useState(true)
   const [busy, setBusy] = useState(false)
 
-  async function submit() {
+  function injectScratch() {
+    create.mutate({ kind: 'scratch', status: 'queued' }, {
+      onSuccess: () => toast.push({ kind: 'ok', title: 'Scratch video injected', detail: 'The Story Artist invents it. Cancelable for 2 minutes.' }),
+      onError: (e) => toast.push({ kind: 'err', title: 'Inject failed', detail: (e as Error).message }),
+    })
+  }
+
+  async function injectCopy() {
+    if (!file) return
     setBusy(true)
     try {
-      let order: Order
-      if (kind === 'copy') {
-        if (!file) throw new Error('Pick the reference video file first.')
-        order = await uploadReference(file, { notes, adaptation, reference_url: refUrl })
-      } else {
-        order = await create.mutateAsync({ kind: 'scratch', format, notes: notes || null, status: 'pool' })
-      }
-      if (produceNow) {
-        await send.mutateAsync({ type: 'order_produce', payload: { order_id: order.id } })
-        toast.push({ kind: 'ok', title: 'Order sent to the factory', detail: 'Production starts on its next check-in (≤2 min).' })
-      } else {
-        toast.push({ kind: 'ok', title: kind === 'copy' ? 'Added to the copy pool' : 'Order saved' })
-      }
-      setFile(null); setNotes(''); setRefUrl('')
+      await uploadReference(file, { notes: note, adaptation, reference_url: refUrl })
+      void qc.invalidateQueries({ queryKey: ['orders'] })
+      toast.push({ kind: 'ok', title: 'Copy injected into the queue', detail: 'Cancelable for 2 minutes.' })
+      setFile(null); setRefUrl(''); setNote(''); setAdaptation('bridge'); setCopyOpen(false)
       if (fileRef.current) fileRef.current.value = ''
     } catch (e) {
-      toast.push({ kind: 'err', title: 'Order failed', detail: (e as Error).message })
+      toast.push({ kind: 'err', title: 'Inject failed', detail: (e as Error).message })
     } finally {
       setBusy(false)
     }
   }
 
   return (
-    <Card className="h-fit p-5">
-      <h2 className="mb-4 text-[15px] font-semibold">Order a video</h2>
-
-      <div className="mb-4 flex gap-1.5">
-        {(['copy', 'scratch'] as const).map((k) => (
-          <button
-            key={k}
-            onClick={() => setKind(k)}
-            className={[
-              'rounded-full border px-4 py-1.5 text-[12px] font-medium capitalize transition-all duration-150 active:scale-95',
-              kind === k ? 'border-accent/50 bg-accent/10 text-accent' : 'border-line text-ink-muted hover:border-line-strong hover:text-ink',
-            ].join(' ')}
-          >
-            {k === 'copy' ? 'Copy a winner' : 'From scratch'}
-          </button>
-        ))}
+    <Card className="p-5">
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="primary" disabled={create.isPending} onClick={injectScratch}>
+          + From scratch
+        </Button>
+        <Button variant="secondary" onClick={() => setCopyOpen((v) => !v)}>
+          {copyOpen ? 'Close' : '+ Copy a winner'}
+        </Button>
+        <span className="ml-2 text-[12px] text-ink-faint">Injects at the tail of the FIFO — cancelable for 2 minutes.</span>
       </div>
 
-      <div className="space-y-3">
-        {kind === 'copy' ? (
-          <>
-            <label className="block cursor-pointer rounded-(--radius-control) border border-dashed border-line-strong bg-raised/50 p-4 text-center transition-colors hover:border-accent/60">
+      {copyOpen && (
+        <div className="mt-4 border-t border-line pt-4">
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_1fr_auto]">
+            <label className="block cursor-pointer rounded-(--radius-control) border border-dashed border-line-strong bg-raised/50 p-3 text-center transition-colors hover:border-accent/60">
               <input ref={fileRef} type="file" accept="video/mp4,video/quicktime" className="hidden" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
               <p className="text-[13px] font-medium text-ink">{file ? file.name : 'Drop the winner video here (.mp4)'}</p>
-              <p className="mt-1 text-[11px] text-ink-faint">≤ 50 MB — TikTok/Reels downloads fit easily</p>
+              <p className="mt-0.5 text-[11px] text-ink-faint">≤ 50 MB — TikTok/Reels downloads fit easily</p>
             </label>
-            <Input placeholder="Original link (optional)" value={refUrl} onChange={(e) => setRefUrl(e.target.value)} />
-            <div>
-              <label className="mb-1.5 block text-[12px] font-medium text-ink-muted">Speech adaptation</label>
+            <div className="space-y-2">
+              <Input placeholder="Original link (optional)" value={refUrl} onChange={(e) => setRefUrl(e.target.value)} />
+              <Input placeholder="Note for the copy (optional)" value={note} onChange={(e) => setNote(e.target.value)} />
+            </div>
+            <div className="flex flex-col items-start gap-2">
               <div className="flex gap-1.5">
                 {([['bridge', 'Brain bridge'], ['verbatim', 'Verbatim'], ['full', 'Full rewrite']] as const).map(([v, l]) => (
                   <button
@@ -269,140 +259,199 @@ function OrderForm() {
                   </button>
                 ))}
               </div>
-            </div>
-          </>
-        ) : (
-          <div>
-            <label className="mb-1.5 block text-[12px] font-medium text-ink-muted">Format</label>
-            <div className="flex flex-wrap gap-1.5">
-              {[['A', 'A — food combo'], ['B', 'B — comparison'], ['callout', 'Direct callout'], ['debunk', 'Debunk'], ['location', 'Absurd location']].map(([v, l]) => (
-                <button
-                  key={v}
-                  onClick={() => setFormat(v)}
-                  className={[
-                    'rounded-full border px-3 py-1 text-[11px] font-medium transition-all duration-150 active:scale-95',
-                    format === v ? 'border-accent/50 bg-accent/10 text-accent' : 'border-line text-ink-muted hover:text-ink',
-                  ].join(' ')}
-                >
-                  {l}
-                </button>
-              ))}
+              <Button variant="primary" disabled={!file || busy} onClick={() => void injectCopy()}>
+                {busy ? <Spinner className="h-4 w-4" /> : 'Inject copy'}
+              </Button>
             </div>
           </div>
-        )}
-
-        <Textarea rows={2} placeholder={kind === 'copy' ? 'Direction for the copy (optional)…' : 'Concept / direction (optional — the Story Artist invents otherwise)…'} value={notes} onChange={(e) => setNotes(e.target.value)} />
-
-        <label className="flex items-center gap-2 text-[12px] text-ink-muted">
-          <input type="checkbox" checked={produceNow} onChange={(e) => setProduceNow(e.target.checked)} className="accent-(--color-accent)" />
-          Produce now (otherwise it just joins the pool)
-        </label>
-
-        <Button variant="primary" className="w-full" disabled={busy || (kind === 'copy' && !file)} onClick={() => void submit()}>
-          {busy ? <Spinner className="h-4 w-4" /> : produceNow ? '▶ Order production' : '+ Add to pool'}
-        </Button>
-      </div>
+        </div>
+      )}
     </Card>
   )
 }
 
-/* ————— copy pool ————— */
+/* ————— the queue (FIFO) ————— */
 
-function CopyPool() {
+const QUEUE_STATUSES: Order['status'][] = ['queued', 'in_production', 'produced', 'failed']
+
+function Queue() {
   const { data: orders, isLoading } = useOrders()
   const { data: videos } = useVideos()
   const { data: fs } = useFactoryState()
   const update = useUpdateOrder()
-  const send = useSendCommand()
   const toast = useToast()
 
-  const copies = useMemo(() => (orders ?? []).filter((o) => o.kind === 'copy' && o.status !== 'canceled'), [orders])
-  const available = copies.filter((o) => o.status === 'pool').length
+  const queue = useMemo(() =>
+    (orders ?? [])
+      .filter((o) => QUEUE_STATUSES.includes(o.status))
+      .sort((a, b) => (b.priority - a.priority) || (+new Date(a.created_at) - +new Date(b.created_at))),
+  [orders])
+
+  const held = useMemo(() =>
+    (orders ?? [])
+      .filter((o) => o.status === 'pool')
+      .sort((a, b) => +new Date(a.created_at) - +new Date(b.created_at)),
+  [orders])
+
+  const slugById = useMemo(() => new Map((videos ?? []).map((v) => [v.id, v.slug])), [videos])
+
+  const queuedCopies = queue.filter((o) => o.kind === 'copy' && o.status === 'queued').length
   const copyGoal = fs?.goals?.per_format?.copy ?? 0
-  const short = Math.max(0, copyGoal - available)
-  const videoBySlugId = useMemo(() => new Map((videos ?? []).map((v) => [v.id, v])), [videos])
+  const short = Math.max(0, copyGoal - queuedCopies)
+
+  function cancel(o: Order) {
+    update.mutate({ id: o.id, patch: { status: 'canceled' } }, {
+      onSuccess: () => toast.push({ kind: 'ok', title: 'Canceled', detail: 'Removed from the queue.' }),
+    })
+  }
+
+  function injectHeld(o: Order) {
+    update.mutate({ id: o.id, patch: { status: 'queued', created_at: new Date().toISOString() } }, {
+      onSuccess: () => toast.push({ kind: 'ok', title: 'Injected into the queue', detail: 'Cancelable for 2 minutes.' }),
+    })
+  }
 
   return (
     <Card className="p-5">
       <div className="mb-1 flex items-center justify-between gap-3">
-        <h2 className="text-[15px] font-semibold">Videos to copy</h2>
-        <span className="text-[12px] text-ink-faint">{available} available · goal {copyGoal}/day</span>
+        <h2 className="text-[15px] font-semibold">The queue</h2>
+        <span className="text-[12px] text-ink-faint">{queuedCopies} cop{queuedCopies === 1 ? 'y' : 'ies'} queued · copy goal {copyGoal}/day</span>
       </div>
 
       {short > 0 && (
         <p className="mb-3 rounded-(--radius-control) border border-warn/40 bg-warn/10 px-3 py-2 text-[12px] text-warn">
-          Today's copy goal is {copyGoal} but only {available} un-copied reference{available === 1 ? '' : 's'} in the pool — add at least {short} more.
+          Inject at least {short} more cop{short === 1 ? 'y' : 'ies'} to hit today's copy goal.
         </p>
       )}
 
       {isLoading && <div className="flex justify-center py-10"><Spinner className="h-5 w-5" /></div>}
-      {!isLoading && copies.length === 0 && (
-        <Empty title="The copy pool is empty" hint="Upload winner videos with the order form — the factory copies them with Louis." />
+      {!isLoading && queue.length === 0 && held.length === 0 && (
+        <Empty title="The queue is empty" hint="Inject a video above — from scratch or a winner to copy. The factory works the FIFO head first." />
       )}
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-        {copies.map((o) => (
-          <ReferenceCard
+      <ul className="divide-y divide-line">
+        {queue.map((o, i) => (
+          <QueueRow
             key={o.id}
             order={o}
-            producedVideo={o.video_id ? videoBySlugId.get(o.video_id) ?? null : null}
-            onProduce={() => send.mutate({ type: 'order_produce', payload: { order_id: o.id } }, {
-              onSuccess: () => { update.mutate({ id: o.id, patch: { status: 'queued' } }); toast.push({ kind: 'ok', title: 'Sent to the factory' }) },
-            })}
-            onCancel={() => update.mutate({ id: o.id, patch: { status: 'canceled' } }, { onSuccess: () => toast.push({ kind: 'ok', title: 'Removed from pool' }) })}
+            position={i + 1}
+            producedSlug={o.video_id ? slugById.get(o.video_id) ?? null : null}
+            onCancel={() => cancel(o)}
           />
         ))}
-      </div>
+      </ul>
+
+      {held.length > 0 && (
+        <div className="mt-4">
+          <div className="mb-2 flex items-center gap-3">
+            <span className="h-px flex-1 bg-line" />
+            <span className="text-[11px] uppercase tracking-wider text-ink-faint">Held — not queued</span>
+            <span className="h-px flex-1 bg-line" />
+          </div>
+          <ul className="divide-y divide-line">
+            {held.map((o) => (
+              <HeldRow key={o.id} order={o} onInject={() => injectHeld(o)} />
+            ))}
+          </ul>
+        </div>
+      )}
     </Card>
   )
 }
 
-const ORDER_BADGE: Record<Order['status'], { tone: 'info' | 'warn' | 'accent' | 'ok' | 'danger' | 'muted'; label: string }> = {
-  pool: { tone: 'info', label: 'In pool' },
-  queued: { tone: 'accent', label: 'Queued' },
-  in_production: { tone: 'warn', label: 'In production' },
-  produced: { tone: 'ok', label: 'Produced' },
-  failed: { tone: 'danger', label: 'Failed' },
-  canceled: { tone: 'muted', label: 'Canceled' },
+function OrderThumb({ order }: { order: Order }) {
+  const { data: url } = usePlayableReference(order.kind === 'copy' ? order.reference_path : null)
+  return (
+    <div className="aspect-[9/16] w-10 shrink-0 overflow-hidden rounded-[6px] border border-line bg-black">
+      {order.kind === 'copy' ? (
+        url
+          ? <video src={url} preload="metadata" muted playsInline className="h-full w-full object-cover" />
+          : <div className="flex h-full items-center justify-center">{order.reference_path ? <Spinner className="h-3 w-3" /> : <span className="text-[9px] text-ink-faint">no file</span>}</div>
+      ) : (
+        <div className="flex h-full items-center justify-center bg-raised">
+          <SparkleIcon />
+        </div>
+      )}
+    </div>
+  )
 }
 
-function ReferenceCard({ order: o, producedVideo, onProduce, onCancel }: {
+function SparkleIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5 text-accent" fill="currentColor" aria-label="from scratch">
+      <path d="M12 2l2.2 5.8L20 10l-5.8 2.2L12 18l-2.2-5.8L4 10l5.8-2.2L12 2z" />
+      <path d="M19 15l1.1 2.9L23 19l-2.9 1.1L19 23l-1.1-2.9L15 19l2.9-1.1L19 15z" className="opacity-70" />
+    </svg>
+  )
+}
+
+/** Grace-window countdown, isolated here so the tick re-renders only this row. */
+function useGraceRemaining(createdAt: string, active: boolean): number {
+  const compute = () => GRACE_MS - (Date.now() - +new Date(createdAt))
+  const [remaining, setRemaining] = useState(compute)
+  useEffect(() => {
+    if (!active) return
+    setRemaining(compute())
+    const t = setInterval(() => {
+      const r = compute()
+      setRemaining(r)
+      if (r <= 0) clearInterval(t)
+    }, 1000)
+    return () => clearInterval(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [createdAt, active])
+  return remaining
+}
+
+function fmtCountdown(ms: number): string {
+  const s = Math.max(0, Math.ceil(ms / 1000))
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+}
+
+function QueueRow({ order: o, position, producedSlug, onCancel }: {
   order: Order
-  producedVideo: { slug: string } | null
-  onProduce: () => void
+  position: number
+  producedSlug: string | null
   onCancel: () => void
 }) {
-  const { data: url } = usePlayableReference(o.reference_path)
-  const badge = ORDER_BADGE[o.status]
+  const remaining = useGraceRemaining(o.created_at, o.status === 'queued')
+  const inGrace = o.status === 'queued' && remaining > 0
 
   return (
-    <div className="overflow-hidden rounded-(--radius-control) border border-line bg-raised transition-all duration-200 hover:border-line-strong">
-      <div className="aspect-[9/16] w-full bg-black">
-        {url ? (
-          <video src={url} controls preload="metadata" className="h-full w-full object-contain" />
-        ) : (
-          <div className="flex h-full items-center justify-center text-[11px] text-ink-faint">{o.reference_path ? <Spinner /> : 'no file'}</div>
-        )}
-      </div>
-      <div className="space-y-1.5 p-2.5">
-        <div className="flex items-center justify-between gap-2">
-          <Badge tone={badge.tone}>{badge.label}</Badge>
-          <span className="text-[10px] text-ink-faint">{fmtDate(o.created_at)}</span>
-        </div>
-        {o.notes && <p className="line-clamp-2 text-[11px] text-ink-muted">{o.notes}</p>}
-        <div className="flex items-center gap-2">
-          {o.status === 'pool' && (
-            <>
-              <Button size="sm" variant="primary" onClick={onProduce}>▶ Produce</Button>
-              <Button size="sm" variant="ghost" onClick={onCancel}>Remove</Button>
-            </>
-          )}
-          {o.status === 'produced' && producedVideo && (
-            <Link className="text-[12px] text-accent hover:underline" to={`/videos/${producedVideo.slug}`}>Open the copy →</Link>
-          )}
-        </div>
-      </div>
-    </div>
+    <li className="flex items-center gap-3 py-2.5">
+      <span className="w-7 shrink-0 text-right font-display text-[15px] text-ink-faint">#{position}</span>
+      <OrderThumb order={o} />
+      <Badge tone={o.kind === 'copy' ? 'info' : 'accent'}>{o.kind === 'copy' ? 'copy' : 'scratch'}</Badge>
+      {o.notes && <span className="hidden max-w-60 truncate text-[11px] text-ink-muted sm:inline">{o.notes}</span>}
+      <span className="text-[11px] text-ink-faint">{fmtDate(o.created_at)}</span>
+      <span className="flex-1" />
+      {o.status === 'produced' && producedSlug && (
+        <Link className="text-[12px] text-accent hover:underline" to={`/videos/${producedSlug}`}>Open →</Link>
+      )}
+      {o.status === 'queued' && (inGrace
+        ? <Badge tone="warn">cancelable {fmtCountdown(remaining)}</Badge>
+        : <Badge tone="accent">queued</Badge>)}
+      {o.status === 'in_production' && <Badge tone="warn">in production</Badge>}
+      {o.status === 'produced' && <Badge tone="ok">produced</Badge>}
+      {o.status === 'failed' && <Badge tone="danger">failed</Badge>}
+      {o.status === 'queued' && (
+        <Button size="sm" variant="ghost" className="text-danger hover:text-danger" onClick={onCancel}>Cancel</Button>
+      )}
+    </li>
+  )
+}
+
+function HeldRow({ order: o, onInject }: { order: Order; onInject: () => void }) {
+  return (
+    <li className="flex items-center gap-3 py-2.5 opacity-80">
+      <span className="w-7 shrink-0" />
+      <OrderThumb order={o} />
+      <Badge tone={o.kind === 'copy' ? 'info' : 'accent'}>{o.kind === 'copy' ? 'copy' : 'scratch'}</Badge>
+      {o.notes && <span className="hidden max-w-60 truncate text-[11px] text-ink-muted sm:inline">{o.notes}</span>}
+      <span className="text-[11px] text-ink-faint">{fmtDate(o.created_at)}</span>
+      <span className="flex-1" />
+      <Button size="sm" variant="secondary" onClick={onInject}>Inject</Button>
+    </li>
   )
 }
 

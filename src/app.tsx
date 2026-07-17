@@ -102,10 +102,31 @@ export default function App() {
         </header>
 
         <main className="min-w-0 flex-1 overflow-y-auto">
+          <FactoryAlertBanner />
           <div className="mx-auto w-full max-w-[1500px] p-4 md:p-6 xl:p-8">
             <Outlet />
           </div>
         </main>
+      </div>
+    </div>
+  )
+}
+
+/** The STOP protocol's voice: when the factory halts on a goal-compromising bug it raises
+ *  app_state.factory_alert and waits for Filipe — this banner is how he finds out, anywhere. */
+function FactoryAlertBanner() {
+  const { data: fs } = useFactoryState()
+  const alert = fs?.alert
+  if (!alert?.message) return null
+  return (
+    <div className="sticky top-0 z-40 border-b-2 border-danger bg-danger/15 px-4 py-3 backdrop-blur md:px-6">
+      <div className="mx-auto flex max-w-[1500px] items-start gap-3">
+        <span className="mt-0.5 flex h-5 w-5 shrink-0 animate-pulse items-center justify-center rounded-full bg-danger text-[12px] font-bold text-white">!</span>
+        <div className="min-w-0">
+          <p className="text-[13px] font-bold uppercase tracking-wide text-danger">Factory stopped — needs you</p>
+          <p className="mt-0.5 text-[13px] leading-relaxed text-ink">{alert.message}</p>
+          <p className="mt-0.5 text-[11px] text-ink-faint">raised {new Date(alert.at).toLocaleString()} — production is halted until you talk to Claude</p>
+        </div>
       </div>
     </div>
   )
