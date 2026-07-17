@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './supabase'
-import type { AnalyticsSummary, RailwayChip, Schedule, Scene, Video } from './types'
+import type { AnalyticsSummary, Feedback, FeedbackKind, RailwayChip, Schedule, Scene, Video } from './types'
 
 async function must<T>(p: PromiseLike<{ data: T | null; error: { message: string } | null }>): Promise<T> {
   const { data, error } = await p
@@ -90,4 +90,41 @@ export function useUpdateVideo(slug: string) {
 
 export async function logEvent(video_id: string | null, type: string, payload: Record<string, unknown> = {}) {
   await supabase.from('events').insert({ video_id, type, payload })
+}
+
+/* ————— feedback: Filipe's verdicts are the factory's most important input ————— */
+
+export function useAllFeedback() {
+  return useQuery({
+    queryKey: ['feedback'],
+    queryFn: () => must<Feedback[]>(supabase.from('feedback').select('*').order('created_at', { ascending: false })),
+  })
+}
+
+export function useAddFeedback() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (row: { video_id: string; kind: FeedbackKind; stars?: number; comment?: string }) => {
+      const { error } = await supabase.from('feedback').insert(row)
+      if (error) throw new Error(error.message)
+      await logEvent(row.video_id, `feedback_${row.kind}`, { stars: row.stars ?? null })
+    },
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['feedback'] }),
+  })
+}
+
+/** Record that Filipe pulled this video's scenes; silently ignored once set or when RLS forbids (scheduled+). */
+export function useMarkDownloaded() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (video: Video) => {
+      if (video.downloaded_at) return
+      await supabase.from('videos').update({ downloaded_at: new Date().toISOString() }).eq('id', video.id)
+      await logEvent(video.id, 'scenes_downloaded')
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['videos'] })
+      void qc.invalidateQueries({ queryKey: ['video'] })
+    },
+  })
 }

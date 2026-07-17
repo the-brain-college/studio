@@ -1,12 +1,14 @@
-import { useEffect, useState } from 'react'
-import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { Link, NavLink, Outlet, useLocation, useSearchParams } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
-import { useAnalytics, useAppState } from '@/lib/queries'
+import { useAllFeedback, useAnalytics, useAppState, useVideos } from '@/lib/queries'
 import { fmtBytes } from '@/lib/time'
 import { Badge, Button } from '@/components/ui'
+import { GROUP_META, GROUP_ORDER, rejectedIdSet, workflowGroup, type WorkflowGroup } from '@/features/videos/video-utils'
 
 const NAV = [
   { to: '/videos', label: 'Video Management', icon: FilmIcon },
+  { to: '/feedback', label: 'Feedback', icon: ChatIcon },
   { to: '/calendar', label: 'Calendar', icon: CalendarIcon },
   { to: '/analytics', label: 'Analytics', icon: ChartIcon },
   { to: '/story', label: 'Stories', icon: BookIcon },
@@ -48,20 +50,22 @@ export default function App() {
 
         <nav className="flex-1 space-y-1 overflow-y-auto p-3">
           {NAV.map(({ to, label, icon: Icon }) => (
-            <NavLink
-              key={to}
-              to={to}
-              title={label}
-              className={({ isActive }) =>
-                [
-                  'flex items-center gap-3 rounded-(--radius-control) px-3 py-2.5 text-[13px] font-medium transition-colors',
-                  isActive ? 'bg-accent/10 text-accent' : 'text-ink-muted hover:bg-raised hover:text-ink',
-                ].join(' ')
-              }
-            >
-              <Icon className="h-4.5 w-4.5 shrink-0" />
-              {(open || mobileOpen) && <span className="truncate">{label}</span>}
-            </NavLink>
+            <div key={to}>
+              <NavLink
+                to={to}
+                title={label}
+                className={({ isActive }) =>
+                  [
+                    'flex items-center gap-3 rounded-(--radius-control) px-3 py-2.5 text-[13px] font-medium transition-colors',
+                    isActive ? 'bg-accent/10 text-accent' : 'text-ink-muted hover:bg-raised hover:text-ink',
+                  ].join(' ')
+                }
+              >
+                <Icon className="h-4.5 w-4.5 shrink-0" />
+                {(open || mobileOpen) && <span className="truncate">{label}</span>}
+              </NavLink>
+              {to === '/videos' && (open || mobileOpen) && <WorkflowLinks />}
+            </div>
           ))}
           {(open || mobileOpen) && <QuickActions />}
         </nav>
@@ -101,6 +105,40 @@ export default function App() {
           </div>
         </main>
       </div>
+    </div>
+  )
+}
+
+/** The workflow at a glance: each stage of Filipe's week is one click, with live counts. */
+function WorkflowLinks() {
+  const { data: videos } = useVideos()
+  const { data: feedback } = useAllFeedback()
+  const location = useLocation()
+  const [params] = useSearchParams()
+  const active = location.pathname === '/videos' ? ((params.get('f') ?? 'new') as WorkflowGroup) : null
+
+  const counts = useMemo(() => {
+    const rejected = rejectedIdSet(feedback)
+    const c = Object.fromEntries(GROUP_ORDER.map((g) => [g, 0])) as Record<WorkflowGroup, number>
+    for (const v of videos ?? []) c[workflowGroup(v, rejected)]++
+    return c
+  }, [videos, feedback])
+
+  return (
+    <div className="ml-4 mt-1 space-y-0.5 border-l border-line pl-3">
+      {GROUP_ORDER.map((g) => (
+        <Link
+          key={g}
+          to={g === 'new' ? '/videos' : `/videos?f=${g}`}
+          className={[
+            'flex items-center justify-between rounded-(--radius-control) px-2.5 py-1.5 text-[12px] transition-colors',
+            active === g ? 'bg-accent/10 font-medium text-accent' : 'text-ink-muted hover:bg-raised hover:text-ink',
+          ].join(' ')}
+        >
+          <span className="truncate">{GROUP_META[g].short}</span>
+          <span className={counts[g] > 0 && g === 'new' ? 'font-semibold text-accent' : 'text-ink-faint'}>{counts[g]}</span>
+        </Link>
+      ))}
     </div>
   )
 }
@@ -187,6 +225,14 @@ function BookIcon({ className }: IconProps) {
     <svg viewBox="0 0 24 24" className={className}>
       <path d="M4 5a2 2 0 0 1 2-2h13v18H6a2 2 0 0 0-2 2z" {...S} />
       <path d="M4 19a2 2 0 0 1 2-2h13" {...S} />
+    </svg>
+  )
+}
+function ChatIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className}>
+      <path d="M21 12a8 8 0 0 1-8 8H4l2.3-2.9A8 8 0 1 1 21 12z" {...S} />
+      <path d="M8.5 10.5h7M8.5 14h4.5" {...S} />
     </svg>
   )
 }

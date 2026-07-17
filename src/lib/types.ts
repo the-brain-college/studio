@@ -21,9 +21,22 @@ export interface Video {
   scenes_purged_at: string | null
   final_purged_at: string | null
   preview_path: string | null
+  downloaded_at: string | null
   qc: { pass?: number; fail?: number; failure_classes?: Record<string, number>; notes?: string } | null
   created_at: string
   updated_at: string
+}
+
+export type FeedbackKind = 'reject' | 'rating' | 'note'
+
+export interface Feedback {
+  id: number
+  video_id: string
+  kind: FeedbackKind
+  stars: number | null
+  comment: string | null
+  created_at: string
+  acknowledged_at: string | null
 }
 
 export interface Scene {
