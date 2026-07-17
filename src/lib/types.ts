@@ -31,6 +31,8 @@ export interface Scene {
   idx: number
   kind: string | null
   spoken: string | null
+  frame_prompt: string | null
+  veo_prompt: string | null
   storage_path: string | null
   size_bytes: number | null
   qc_verdict: string | null
