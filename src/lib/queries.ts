@@ -195,3 +195,11 @@ export function useUnapproveVideo() {
 export function useMarkDownloaded() {
   return useVideoPatch('scenes_downloaded', (v) => (v.downloaded_at ? null : { downloaded_at: new Date().toISOString() }))
 }
+
+/** Filipe scheduled the video in Meta Business Suite (FB+IG paired). Reversible. */
+export function useMarkMetaScheduled() {
+  return useVideoPatch('meta_scheduled', () => ({ meta_scheduled_at: new Date().toISOString() }))
+}
+export function useUnmarkMetaScheduled() {
+  return useVideoPatch('meta_schedule_unmarked', () => ({ meta_scheduled_at: null }))
+}

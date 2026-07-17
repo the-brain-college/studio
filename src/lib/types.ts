@@ -23,6 +23,8 @@ export interface Video {
   preview_path: string | null
   downloaded_at: string | null
   approved_at: string | null
+  meta_caption: string | null
+  meta_scheduled_at: string | null
   qc: { pass?: number; fail?: number; failure_classes?: Record<string, number>; notes?: string } | null
   created_at: string
   updated_at: string
