@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import {
-  useCommands, useCreateOrder, useFactoryState, useOrders, useSendCommand, useUpdateOrder, useVideos, uploadReference,
+  useCommands, useCreateOrder, useFactoryState, useOrders, useSendCommand, useUpdateOrder, useVideos, uploadReference, uploadScheduleVideo,
 } from '@/lib/queries'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/components/toast'
@@ -23,11 +23,24 @@ export function ProductionPage() {
       />
       <div className="space-y-6">
         <MissionControl />
+        <SectionHeading title="Video Requests" sub="Ask the factory to make a video — from scratch or copying a winner." />
         <InjectBar />
         <Queue />
+        <SectionHeading title="Videos to Schedule" sub="Finished videos you made yourself — the factory takes them from here." />
+        <SchedulePool />
         <CommandLog />
       </div>
     </>
+  )
+}
+
+function SectionHeading({ title, sub }: { title: string; sub?: string }) {
+  return (
+    <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 pt-1">
+      <h2 className="text-[12px] font-semibold uppercase tracking-wider text-ink-muted">{title}</h2>
+      {sub && <span className="text-[11px] text-ink-faint">{sub}</span>}
+      <span className="h-px min-w-10 flex-1 self-center bg-line" />
+    </div>
   )
 }
 
@@ -284,13 +297,13 @@ function Queue() {
 
   const queue = useMemo(() =>
     (orders ?? [])
-      .filter((o) => QUEUE_STATUSES.includes(o.status))
+      .filter((o) => o.kind !== 'schedule' && QUEUE_STATUSES.includes(o.status))
       .sort((a, b) => (b.priority - a.priority) || (+new Date(a.created_at) - +new Date(b.created_at))),
   [orders])
 
   const held = useMemo(() =>
     (orders ?? [])
-      .filter((o) => o.status === 'pool')
+      .filter((o) => o.kind !== 'schedule' && o.status === 'pool')
       .sort((a, b) => +new Date(a.created_at) - +new Date(b.created_at)),
   [orders])
 
@@ -360,11 +373,17 @@ function Queue() {
   )
 }
 
+const KIND_BADGE: Record<Order['kind'], { tone: 'info' | 'accent' | 'ok'; label: string }> = {
+  copy: { tone: 'info', label: 'copy' },
+  scratch: { tone: 'accent', label: 'scratch' },
+  schedule: { tone: 'ok', label: 'schedule' },
+}
+
 function OrderThumb({ order }: { order: Order }) {
-  const { data: url } = usePlayableReference(order.kind === 'copy' ? order.reference_path : null)
+  const { data: url } = usePlayableReference(order.kind !== 'scratch' ? order.reference_path : null)
   return (
     <div className="aspect-[9/16] w-10 shrink-0 overflow-hidden rounded-[6px] border border-line bg-black">
-      {order.kind === 'copy' ? (
+      {order.kind !== 'scratch' ? (
         url
           ? <video src={url} preload="metadata" muted playsInline className="h-full w-full object-cover" />
           : <div className="flex h-full items-center justify-center">{order.reference_path ? <Spinner className="h-3 w-3" /> : <span className="text-[9px] text-ink-faint">no file</span>}</div>
@@ -422,7 +441,7 @@ function QueueRow({ order: o, position, producedSlug, onCancel }: {
     <li className="flex items-center gap-3 py-2.5">
       <span className="w-7 shrink-0 text-right font-display text-[15px] text-ink-faint">#{position}</span>
       <OrderThumb order={o} />
-      <Badge tone={o.kind === 'copy' ? 'info' : 'accent'}>{o.kind === 'copy' ? 'copy' : 'scratch'}</Badge>
+      <Badge tone={KIND_BADGE[o.kind].tone}>{KIND_BADGE[o.kind].label}</Badge>
       {o.notes && <span className="hidden max-w-60 truncate text-[11px] text-ink-muted sm:inline">{o.notes}</span>}
       <span className="text-[11px] text-ink-faint">{fmtDate(o.created_at)}</span>
       <span className="flex-1" />
@@ -447,7 +466,7 @@ function HeldRow({ order: o, onInject }: { order: Order; onInject: () => void })
     <li className="flex items-center gap-3 py-2.5 opacity-80">
       <span className="w-7 shrink-0" />
       <OrderThumb order={o} />
-      <Badge tone={o.kind === 'copy' ? 'info' : 'accent'}>{o.kind === 'copy' ? 'copy' : 'scratch'}</Badge>
+      <Badge tone={KIND_BADGE[o.kind].tone}>{KIND_BADGE[o.kind].label}</Badge>
       {o.notes && <span className="hidden max-w-60 truncate text-[11px] text-ink-muted sm:inline">{o.notes}</span>}
       <span className="text-[11px] text-ink-faint">{fmtDate(o.created_at)}</span>
       <span className="flex-1" />
@@ -467,6 +486,91 @@ function usePlayableReference(path: string | null) {
       return data.signedUrl
     },
   })
+}
+
+/* ————— videos to schedule (finished videos → analyze + schedule) ————— */
+
+function SchedulePool() {
+  const { data: orders, isLoading } = useOrders()
+  const { data: videos } = useVideos()
+  const update = useUpdateOrder()
+  const qc = useQueryClient()
+  const toast = useToast()
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [busy, setBusy] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
+
+  const pool = useMemo(() =>
+    (orders ?? [])
+      .filter((o) => o.kind === 'schedule' && QUEUE_STATUSES.includes(o.status))
+      .sort((a, b) => (b.priority - a.priority) || (+new Date(a.created_at) - +new Date(b.created_at))),
+  [orders])
+
+  const slugById = useMemo(() => new Map((videos ?? []).map((v) => [v.id, v.slug])), [videos])
+
+  async function upload(file: File | null | undefined) {
+    if (!file || busy) return
+    if (!/\.(mp4|mov)$/i.test(file.name) && !/video\//.test(file.type)) {
+      toast.push({ kind: 'err', title: 'Not a video', detail: 'Drop an .mp4 file.' })
+      return
+    }
+    setBusy(true)
+    try {
+      await uploadScheduleVideo(file)
+      void qc.invalidateQueries({ queryKey: ['orders'] })
+      toast.push({ kind: 'ok', title: 'Video queued for scheduling', detail: 'Cancelable for 2 minutes.' })
+      if (fileRef.current) fileRef.current.value = ''
+    } catch (e) {
+      toast.push({ kind: 'err', title: 'Upload failed', detail: (e as Error).message })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function cancel(o: Order) {
+    update.mutate({ id: o.id, patch: { status: 'canceled' } }, {
+      onSuccess: () => toast.push({ kind: 'ok', title: 'Canceled', detail: 'Removed from the schedule pool.' }),
+    })
+  }
+
+  return (
+    <Card className="p-5">
+      <label
+        className={[
+          'block cursor-pointer rounded-(--radius-control) border border-dashed bg-raised/50 p-4 text-center transition-colors',
+          dragOver ? 'border-accent bg-accent/5' : 'border-line-strong hover:border-accent/60',
+        ].join(' ')}
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => { e.preventDefault(); setDragOver(false); void upload(e.dataTransfer.files?.[0]) }}
+      >
+        <input ref={fileRef} type="file" accept="video/mp4" className="hidden" onChange={(e) => void upload(e.target.files?.[0])} />
+        {busy
+          ? <span className="flex items-center justify-center gap-2 text-[13px] text-ink"><Spinner className="h-4 w-4" /> Uploading…</span>
+          : <p className="text-[13px] font-medium text-ink">Upload finished video</p>}
+        <p className="mt-0.5 text-[11px] text-ink-faint">Drag & drop or click — .mp4, ready to publish</p>
+      </label>
+      <p className="mt-2 text-[12px] text-ink-faint">The factory analyzes the script, writes the caption, and schedules to YouTube.</p>
+
+      {isLoading && <div className="flex justify-center py-8"><Spinner className="h-5 w-5" /></div>}
+      {!isLoading && pool.length === 0 && (
+        <p className="mt-3 border-t border-line pt-3 text-[12px] text-ink-faint">Nothing waiting — upload a finished video above.</p>
+      )}
+      {pool.length > 0 && (
+        <ul className="mt-3 divide-y divide-line border-t border-line">
+          {pool.map((o, i) => (
+            <QueueRow
+              key={o.id}
+              order={o}
+              position={i + 1}
+              producedSlug={o.video_id ? slugById.get(o.video_id) ?? null : null}
+              onCancel={() => cancel(o)}
+            />
+          ))}
+        </ul>
+      )}
+    </Card>
+  )
 }
 
 /* ————— command log ————— */

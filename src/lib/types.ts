@@ -32,7 +32,7 @@ export interface Video {
 
 export type FeedbackKind = 'reject' | 'rating' | 'note'
 
-export type OrderKind = 'copy' | 'scratch'
+export type OrderKind = 'copy' | 'scratch' | 'schedule'
 export type OrderStatus = 'pool' | 'queued' | 'in_production' | 'produced' | 'failed' | 'canceled'
 export type Adaptation = 'bridge' | 'verbatim' | 'full'
 

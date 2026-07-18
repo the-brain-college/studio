@@ -183,6 +183,20 @@ export async function uploadReference(file: File, fields: { notes?: string; adap
   return data as Order
 }
 
+/** Upload a finished video into the schedule pool: storage first, then the queued schedule order. */
+export async function uploadScheduleVideo(file: File, fields: { notes?: string } = {}): Promise<Order> {
+  const id = crypto.randomUUID()
+  const path = `references/${id}.mp4`
+  const { error: upErr } = await supabase.storage.from('media').upload(path, file, { contentType: 'video/mp4' })
+  if (upErr) throw new Error(upErr.message)
+  const { data, error } = await supabase.from('orders').insert({
+    id, kind: 'schedule', status: 'queued', reference_path: path,
+    notes: fields.notes || null,
+  }).select().single()
+  if (error) throw new Error(error.message)
+  return data as Order
+}
+
 /* ————— feedback: Filipe's verdicts are the factory's most important input ————— */
 
 export function useAllFeedback() {
