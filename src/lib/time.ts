@@ -15,6 +15,15 @@ export function fmtLisbonTime(iso: string): string {
   return new Intl.DateTimeFormat('en-GB', { timeZone: LISBON, hour: '2-digit', minute: '2-digit' }).format(new Date(iso))
 }
 
+/** Date + wall-clock time to the second, e.g. "18 Jul 2026, 15:07:25" (Lisbon). */
+export function fmtLisbonSeconds(iso: string): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: LISBON,
+    day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  }).format(new Date(iso))
+}
+
 export function fmtDate(iso: string): string {
   return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(iso))
 }

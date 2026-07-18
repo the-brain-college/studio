@@ -7,7 +7,7 @@ import {
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/components/toast'
 import type { Adaptation, Command, Order } from '@/lib/types'
-import { fmtDate } from '@/lib/time'
+import { fmtDate, fmtLisbonSeconds } from '@/lib/time'
 import { Badge, Button, Card, Empty, Input, PageHeader, Spinner, Textarea } from '@/components/ui'
 
 const ONLINE_MS = 10 * 60_000        // Filipe's rule: factory seen < 10 min ago = ONLINE, else OFFLINE
@@ -615,6 +615,7 @@ interface ChatMessage {
   text: string
   created_at: string
   read_at: string | null
+  model: string | null // which Claude model replied; null on filipe rows + legacy claude rows
 }
 
 function ChatPanel() {
@@ -622,11 +623,13 @@ function ChatPanel() {
   const toast = useToast()
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
+  const [live, setLive] = useState(false) // websocket connected → stop polling
   const listRef = useRef<HTMLDivElement>(null)
 
   const { data: messages } = useQuery({
     queryKey: ['chat-messages'],
-    refetchInterval: 5_000, // polling floor — the realtime subscription below makes it instant when enabled
+    // Realtime pushes inserts instantly; fall back to a 10s poll whenever the socket isn't live.
+    refetchInterval: live ? false : 10_000,
     queryFn: async (): Promise<ChatMessage[]> => {
       const { data, error } = await supabase
         .from('chat_messages').select('*')
@@ -640,8 +643,19 @@ function ChatPanel() {
     const ch = supabase
       .channel('chat-messages')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' },
-        () => void qc.invalidateQueries({ queryKey: ['chat-messages'] }))
-      .subscribe()
+        (payload) => {
+          const m = payload.new as ChatMessage
+          qc.setQueryData<ChatMessage[]>(['chat-messages'], (prev) => {
+            if (!prev) return [m]
+            if (prev.some((x) => x.id === m.id)) return prev // dedupe our own echo + reconnect replays
+            return [...prev, m]
+          })
+        })
+      .subscribe((status) => {
+        setLive(status === 'SUBSCRIBED')
+        // On (re)connect, reconcile any inserts missed while the socket was down.
+        if (status === 'SUBSCRIBED') void qc.invalidateQueries({ queryKey: ['chat-messages'] })
+      })
     return () => { void supabase.removeChannel(ch) }
   }, [qc])
 
@@ -683,7 +697,9 @@ function ChatPanel() {
             >
               <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-ink">{m.text}</p>
               <p className="mt-1 text-right text-[10px] text-ink-faint">
-                {m.sender === 'filipe' ? 'you' : 'Claude'} · {fmtDate(m.created_at)}
+                {m.sender === 'filipe'
+                  ? 'you'
+                  : m.model ? `Claude · ${m.model}` : 'Claude'} · {fmtLisbonSeconds(m.created_at)}
               </p>
             </div>
           </div>
