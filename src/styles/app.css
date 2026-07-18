@@ -28,6 +28,21 @@
 
   --radius-card: 10px;
   --radius-control: 8px;
+
+  /* ————— fluid typographic scale (mobile → desktop via clamp) —————
+     one source of truth for every size. Semantic elements get these in @layer base;
+     components can also reach them as text-display / text-h2 / … utilities below. */
+  --text-display: clamp(1.5rem, 1.15rem + 1.55vw, 2rem);      /* page titles   24 → 32 */
+  --text-h2:      clamp(1.125rem, 1.02rem + 0.5vw, 1.375rem); /* section       18 → 22 */
+  --text-h3:      clamp(1rem, 0.95rem + 0.28vw, 1.15rem);     /* card titles   16 → 18.4 */
+  --text-lead:    0.9375rem;  /* 15 — emphasised body   */
+  --text-body:    0.8125rem;  /* 13 — default body/UI   */
+  --text-small:   0.75rem;    /* 12 — secondary         */
+  --text-caption: 0.6875rem;  /* 11 — meta/labels       */
+
+  --leading-tight: 1.2;
+  --leading-snug: 1.4;
+  --leading-normal: 1.6;
 }
 
 html, body, #root { height: 100%; }
@@ -36,8 +51,41 @@ body {
   color: var(--color-ink);
   font-family: var(--font-sans);
   font-size: 14px;
+  line-height: var(--leading-normal);
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
+/* never allow a stray wide child to scroll the whole page sideways on phones */
+body { overflow-x: hidden; }
+
+/* ————— semantic typography: sane, responsive defaults for bare elements —————
+   Components that set an explicit text-[…] class still win; this is the floor,
+   and it is what the new review flow + any semantic markup render as. */
+@layer base {
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+    color: var(--color-ink);
+    font-weight: 600;
+    line-height: var(--leading-tight);
+    text-wrap: balance;
+  }
+  h1 { font-size: var(--text-display); letter-spacing: -0.02em; }
+  h2 { font-size: var(--text-h2); letter-spacing: -0.015em; }
+  h3 { font-size: var(--text-h3); letter-spacing: -0.01em; }
+  h4 { font-size: var(--text-lead); }
+  h5 { font-size: var(--text-body); }
+  h6 { font-size: var(--text-small); }
+  p  { line-height: var(--leading-normal); }
+}
+
+/* reusable semantic type utilities (opt-in, so components migrate gradually) */
+@utility text-display  { font-family: var(--font-display); font-size: var(--text-display); font-weight: 600; line-height: var(--leading-tight); letter-spacing: -0.02em; }
+@utility text-h2       { font-family: var(--font-display); font-size: var(--text-h2); font-weight: 600; line-height: var(--leading-tight); letter-spacing: -0.015em; }
+@utility text-h3       { font-size: var(--text-h3); font-weight: 600; line-height: var(--leading-snug); }
+@utility text-body     { font-size: var(--text-body); line-height: var(--leading-normal); }
+@utility text-lead     { font-size: var(--text-lead); line-height: var(--leading-normal); }
+@utility text-small    { font-size: var(--text-small); line-height: var(--leading-snug); }
+@utility text-caption  { font-size: var(--text-caption); line-height: var(--leading-snug); }
 
 /* scrollbars that match the theme */
 * { scrollbar-width: thin; scrollbar-color: var(--color-line-strong) transparent; }

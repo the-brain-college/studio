@@ -13,6 +13,7 @@ import { PlatformsCard } from './PlatformsCard'
 import { PipelinePanel } from './PipelinePanel'
 import { PreviewPlayer } from './PreviewPlayer'
 import { SequencePlayer } from './SequencePlayer'
+import { ReviewWizard } from './ReviewWizard'
 import { displayName, downloadScenesZip, videoNumbers } from './video-utils'
 
 export function VideoDetailPage() {
@@ -25,6 +26,7 @@ export function VideoDetailPage() {
   const toast = useToast()
   const n = useMemo(() => (video && all ? videoNumbers(all).get(video.id) : undefined), [video, all])
   const [playing, setPlaying] = useState(false)
+  const [reviewing, setReviewing] = useState(false)
   const [zipMsg, setZipMsg] = useState<string | null>(null)
   const [tab, setTab] = useState<'overview' | 'pipeline'>('overview')
 
@@ -54,13 +56,15 @@ export function VideoDetailPage() {
         title={displayName(video, n)}
         sub={`${video.scene_count} scenes · created ${fmtLisbon(video.created_at, { year: 'numeric' })}`}
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="primary" onClick={() => setReviewing(true)} disabled={!scenes?.length}>★ Review</Button>
             <Button size="sm" onClick={() => setPlaying(true)} disabled={!scenes?.some((s) => s.storage_path)}>▶ Play scenes</Button>
             <Button size="sm" onClick={() => void zip()} disabled={!!zipMsg}>{zipMsg ?? '⬇ Download ZIP'}</Button>
             <Badge tone={STATUS_TONE[video.status]}>{STATUS_LABEL[video.status]}</Badge>
           </div>
         }
       />
+      {reviewing && scenes && <ReviewWizard video={video} scenes={scenes} n={n} onClose={() => setReviewing(false)} />}
       {playing && (video.preview_path ? (
         <PreviewPlayer video={video} n={n} onClose={() => setPlaying(false)} />
       ) : (
@@ -87,13 +91,12 @@ export function VideoDetailPage() {
       ) : (
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_400px]">
           <div className="min-w-0 space-y-6">
-            {video.final_path && !video.final_purged_at && <AutoEditCard video={video} />}
+            <FinalEditCard video={video} />
             <MetadataCard video={video} />
             <ScenesCard video={video} scenes={scenes ?? []} />
           </div>
           <div className="space-y-6">
             <FeedbackCard video={video} n={n} feedback={feedback ?? []} />
-            <FinalCard video={video} />
             <ScheduleCard video={video} />
             <PlatformsCard video={video} />
             {video.local_master_path && <LocalPickupCard path={video.local_master_path} />}
@@ -104,55 +107,109 @@ export function VideoDetailPage() {
   )
 }
 
-/* ————— auto-edited final: the factory's cut, front and centre ————— */
-function AutoEditCard({ video }: { video: Video }) {
+/* ————— the final cut: one place — the factory's auto-edit, replaceable by your own upload ————— */
+function FinalEditCard({ video }: { video: Video }) {
+  const update = useUpdateVideo(video.slug)
+  const [pct, setPct] = useState<number | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  const [showUpload, setShowUpload] = useState(false)
+  const has = !!video.final_path && !video.final_purged_at
+
   const { data: url } = useQuery({
     queryKey: ['final-url', video.final_path, video.final_uploaded_at],
+    enabled: has,
     staleTime: 45 * 60_000,
     queryFn: () => signedUrl(video.final_path!, 3600),
   })
   const { data: dlUrl } = useQuery({
     queryKey: ['final-dl-url', video.final_path, video.final_uploaded_at],
+    enabled: has,
     staleTime: 45 * 60_000,
     queryFn: () => signedUrl(video.final_path!, 3600, `${video.slug}-final.mp4`),
   })
+
+  async function onPick(file: File | undefined) {
+    if (!file) return
+    setErr(null)
+    if (file.size > MAX_FINAL_BYTES) {
+      setErr(`File is ${fmtBytes(file.size)} — the free-tier cap is 48 MB. Re-export: H.264 1080×1920, ~8 Mbps video / 192 kbps audio.`)
+      return
+    }
+    try {
+      setPct(0)
+      const path = await uploadFinal(video.slug, file, setPct)
+      await update.mutateAsync({
+        final_path: path,
+        final_size_bytes: file.size,
+        final_uploaded_at: new Date().toISOString(),
+        status: 'edited', // keeps the scheduler's status==='edited' gate intact
+      })
+      await logEvent(video.id, 'final_uploaded', { bytes: file.size })
+      setShowUpload(false)
+    } catch (e) {
+      setErr((e as Error).message)
+    } finally {
+      setPct(null)
+    }
+  }
+
   return (
-    <Card className="p-5">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-[15px] font-semibold">
-          Edited video <span className="ml-1 text-[11px] font-normal text-ink-faint">auto-edit v1</span>
-        </h2>
-        <div className="flex items-center gap-2">
-          {video.final_size_bytes != null && <span className="text-[11px] text-ink-faint">{fmtBytes(video.final_size_bytes)}</span>}
-          {dlUrl ? (
+    <Card className="p-4 sm:p-5">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        <div className="min-w-0">
+          <h2 className="text-h3 text-ink">Final edit</h2>
+          <p className="mt-0.5 text-caption text-ink-faint">The factory’s auto-edited cut — trims, zooms, karaoke captions, cloned voice.</p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {video.final_size_bytes != null && has && <span className="text-caption text-ink-faint">{fmtBytes(video.final_size_bytes)}</span>}
+          {has && (dlUrl ? (
             <a
               href={dlUrl}
               download={`${video.slug}-final.mp4`}
-              className="inline-flex h-7 select-none items-center justify-center gap-2 whitespace-nowrap rounded-(--radius-control) bg-accent px-2.5 text-xs font-medium text-[#04211d] shadow-sm shadow-accent/20 transition-all duration-150 ease-out hover:bg-accent-deep hover:shadow-md hover:shadow-accent/25 active:scale-[0.97]"
+              className="inline-flex h-8 select-none items-center justify-center gap-2 whitespace-nowrap rounded-(--radius-control) bg-accent px-3 text-small font-medium text-[#04211d] shadow-sm shadow-accent/20 transition-all duration-150 ease-out hover:bg-accent-deep active:scale-[0.97]"
             >
               ⬇ Download
             </a>
           ) : (
             <Spinner />
-          )}
+          ))}
         </div>
       </div>
-      <div className="overflow-hidden rounded-(--radius-control) border border-line bg-black">
-        {url ? (
-          <video src={url} controls preload="metadata" className="mx-auto h-100 max-w-full object-contain" />
-        ) : (
-          <div className="flex h-100 items-center justify-center"><Spinner /></div>
-        )}
-      </div>
-      <p className="mt-2 text-[11px] text-ink-faint">Auto-edited: trims + zooms + captions. Style calibration pending your examples.</p>
+
+      {has ? (
+        <div className="overflow-hidden rounded-(--radius-control) border border-line bg-black">
+          {url ? (
+            <video src={url} controls preload="metadata" className="mx-auto max-h-[70vh] w-full max-w-[360px] object-contain" />
+          ) : (
+            <div className="flex aspect-[9/16] max-h-[70vh] items-center justify-center"><Spinner /></div>
+          )}
+        </div>
+      ) : video.final_purged_at ? (
+        <p className="rounded-(--radius-control) border border-line bg-raised/40 p-3 text-body text-ink-faint">Archived copy purged (published on YouTube).</p>
+      ) : null}
+
+      {/* upload / replace — secondary, never a second player */}
       <div className="mt-3 border-t border-line pt-3">
-        <InlineNote
-          videoId={video.id}
-          target="final"
-          triggerLabel="✎ Note on final"
-          placeholder="What should the edit do differently? Cuts, zooms, captions, pacing…"
-          savedTitle="Note on the final saved"
-        />
+        {pct !== null ? (
+          <div className="space-y-2">
+            <Progress value={pct} />
+            <p className="text-small text-ink-muted">Uploading your edit… {pct}%</p>
+          </div>
+        ) : showUpload || !has ? (
+          <div className="space-y-2">
+            <label className="block cursor-pointer rounded-(--radius-control) border border-dashed border-line-strong bg-raised/50 p-4 text-center transition-colors hover:border-accent/60">
+              <input type="file" accept="video/mp4" className="hidden" onChange={(e) => void onPick(e.target.files?.[0])} />
+              <p className="text-body font-medium text-ink">{has ? 'Upload your own edit' : 'Upload the final'} (.mp4)</p>
+              <p className="mt-1 text-caption text-ink-faint">≤ 48 MB · H.264 1080×1920 · resumable</p>
+            </label>
+            {has && <button onClick={() => setShowUpload(false)} className="text-small text-ink-faint hover:text-ink">Cancel</button>}
+          </div>
+        ) : (
+          <button onClick={() => setShowUpload(true)} className="text-small font-medium text-accent hover:underline">
+            ✎ Replace with your own edit
+          </button>
+        )}
+        {err && <p className="mt-2 text-small text-danger">{err}</p>}
       </div>
     </Card>
   )
@@ -240,13 +297,14 @@ function MetadataCard({ video }: { video: Video }) {
 /* ————— scenes ————— */
 function ScenesCard({ video, scenes }: { video: Video; scenes: Scene[] }) {
   return (
-    <Card className="p-5">
-      <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-[15px] font-semibold">Scenes</h2>
+    <Card className="p-4 sm:p-5">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-h3 text-ink">Scenes <span className="text-small font-normal text-ink-faint">({scenes.length})</span></h2>
         {video.scenes_purged_at && <Badge tone="muted">files purged — masters on the PC</Badge>}
       </div>
-      {scenes.length === 0 && <p className="text-[13px] text-ink-faint">No scenes recorded.</p>}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {scenes.length === 0 && <p className="text-body text-ink-faint">No scenes recorded.</p>}
+      {/* auto-fill guarantees each card ≥ 190px and reflows cleanly on Mac, tablet and phone */}
+      <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(190px,1fr))]">
         {scenes.map((s) => (
           <ScenePlayer key={s.id} scene={s} />
         ))}
@@ -299,19 +357,17 @@ function ScenePlayer({ scene }: { scene: Scene }) {
         )}
       </div>
       <div className="space-y-2 p-3">
-        <div className="flex items-center justify-between">
-          <p className="text-[12px] font-semibold text-ink">Scene {scene.idx}</p>
-          <div className="flex items-center gap-1.5">
-            {scene.qc_verdict === 'PASS' && <Badge tone="ok">QC</Badge>}
-            {scene.qc_verdict === 'FAIL' && <Badge tone="danger">{scene.qc_failure_class ?? 'QC'}</Badge>}
-            {(dlUrl ?? url) && (
-              <a href={dlUrl ?? url} download={`scene-${scene.idx}.mp4`} className="text-[12px] text-accent hover:underline">
-                Download
-              </a>
-            )}
-          </div>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <p className="text-small font-semibold text-ink">Scene {scene.idx}</p>
+          {scene.qc_verdict === 'PASS' && <Badge tone="ok">QC</Badge>}
+          {scene.qc_verdict === 'FAIL' && <Badge tone="danger">{scene.qc_failure_class ?? 'QC'}</Badge>}
+          {(dlUrl ?? url) && (
+            <a href={dlUrl ?? url} download={`scene-${scene.idx}.mp4`} className="ml-auto text-small text-accent hover:underline">
+              Download
+            </a>
+          )}
         </div>
-        {scene.spoken && <p className="line-clamp-3 text-[12px] leading-relaxed text-ink-muted">“{scene.spoken}”</p>}
+        {scene.spoken && <p className="line-clamp-3 text-small leading-relaxed text-ink-muted">“{scene.spoken}”</p>}
         {(scene.frame_prompt || scene.veo_prompt) && (
           <details className="group">
             <summary className="cursor-pointer list-none text-[12px] font-medium text-accent hover:underline">
@@ -350,74 +406,6 @@ function ScenePlayer({ scene }: { scene: Scene }) {
         />
       </div>
     </div>
-  )
-}
-
-/* ————— final upload ————— */
-function FinalCard({ video }: { video: Video }) {
-  const update = useUpdateVideo(video.slug)
-  const [pct, setPct] = useState<number | null>(null)
-  const [err, setErr] = useState<string | null>(null)
-
-  const { data: finalUrl } = useQuery({
-    queryKey: ['final-url', video.final_path, video.final_uploaded_at],
-    enabled: !!video.final_path && !video.final_purged_at,
-    queryFn: () => signedUrl(video.final_path!, 3600),
-  })
-
-  async function onPick(file: File | undefined) {
-    if (!file) return
-    setErr(null)
-    if (file.size > MAX_FINAL_BYTES) {
-      setErr(`File is ${fmtBytes(file.size)} — the free-tier cap is 48 MB. Re-export: H.264 1080×1920, ~8 Mbps video / 192 kbps audio.`)
-      return
-    }
-    try {
-      setPct(0)
-      const path = await uploadFinal(video.slug, file, setPct)
-      await update.mutateAsync({
-        final_path: path,
-        final_size_bytes: file.size,
-        final_uploaded_at: new Date().toISOString(),
-        status: 'edited',
-      })
-      await logEvent(video.id, 'final_uploaded', { bytes: file.size })
-    } catch (e) {
-      setErr((e as Error).message)
-    } finally {
-      setPct(null)
-    }
-  }
-
-  return (
-    <Card className="p-5">
-      <h2 className="mb-3 text-[15px] font-semibold">Final edit</h2>
-      {finalUrl && (
-        <div className="mb-3 overflow-hidden rounded-(--radius-control) border border-line bg-black">
-          <video src={finalUrl} controls preload="metadata" className="max-h-80 w-full object-contain" />
-        </div>
-      )}
-      {video.final_path && !finalUrl && !video.final_purged_at && <Spinner className="mb-3" />}
-      {video.final_purged_at && (
-        <p className="mb-3 text-[12px] text-ink-faint">Archived copy purged (published on YouTube).</p>
-      )}
-      {pct !== null ? (
-        <div className="space-y-2">
-          <Progress value={pct} />
-          <p className="text-[12px] text-ink-muted">Uploading… {pct}%</p>
-        </div>
-      ) : (
-        <label className="block cursor-pointer rounded-(--radius-control) border border-dashed border-line-strong bg-raised/50 p-5 text-center transition-colors hover:border-accent/60">
-          <input type="file" accept="video/mp4" className="hidden" onChange={(e) => void onPick(e.target.files?.[0])} />
-          <p className="text-[13px] font-medium text-ink">{video.final_path ? 'Replace final' : 'Upload final'} (.mp4)</p>
-          <p className="mt-1 text-[11px] text-ink-faint">≤ 48 MB · H.264 1080×1920 · resumable</p>
-        </label>
-      )}
-      {err && <p className="mt-2 text-[12px] text-danger">{err}</p>}
-      {video.final_size_bytes != null && pct === null && (
-        <p className="mt-2 text-[11px] text-ink-faint">Current file: {fmtBytes(video.final_size_bytes)}</p>
-      )}
-    </Card>
   )
 }
 
