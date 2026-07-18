@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './supabase'
 import type {
-  AnalyticsSummary, Command, CommandType, Feedback, FeedbackKind, HeartbeatState,
+  AnalyticsSummary, Command, CommandType, Feedback, FeedbackKind, FeedbackTarget, HeartbeatState,
   FactoryStatus, Order, ProductionGoals, RailwayChip, Schedule, Scene, Video,
 } from './types'
 
@@ -209,10 +209,13 @@ export function useAllFeedback() {
 export function useAddFeedback() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (row: { video_id: string; kind: FeedbackKind; stars?: number; comment?: string }) => {
+    mutationFn: async (row: {
+      video_id: string; kind: FeedbackKind; stars?: number; comment?: string
+      target?: FeedbackTarget; scene_id?: string; scene_idx?: number
+    }) => {
       const { error } = await supabase.from('feedback').insert(row)
       if (error) throw new Error(error.message)
-      await logEvent(row.video_id, `feedback_${row.kind}`, { stars: row.stars ?? null })
+      await logEvent(row.video_id, `feedback_${row.kind}`, { stars: row.stars ?? null, target: row.target ?? 'video', scene_idx: row.scene_idx ?? null })
     },
     // optimistic: a Reject moves the card the instant the button is pressed
     onMutate: async (row) => {
@@ -220,6 +223,7 @@ export function useAddFeedback() {
       const prev = qc.getQueryData<Feedback[]>(['feedback'])
       const ghost: Feedback = {
         id: -Date.now(), video_id: row.video_id, kind: row.kind, stars: row.stars ?? null,
+        target: row.target ?? 'video', scene_id: row.scene_id ?? null, scene_idx: row.scene_idx ?? null,
         comment: row.comment ?? null, created_at: new Date().toISOString(), acknowledged_at: null, retracted_at: null,
       }
       qc.setQueryData<Feedback[]>(['feedback'], (old) => [ghost, ...(old ?? [])])

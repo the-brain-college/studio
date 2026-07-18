@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { useAllFeedback, useMarkDownloaded, useScenes, useSchedules, useUpdateVideo, useVideo, useVideos, logEvent } from '@/lib/queries'
+import { useAddFeedback, useAllFeedback, useMarkDownloaded, useScenes, useSchedules, useUpdateVideo, useVideo, useVideos, logEvent } from '@/lib/queries'
 import { signedUrl, supabase } from '@/lib/supabase'
 import { MAX_FINAL_BYTES, uploadFinal } from '@/lib/tus-upload'
 import { STATUS_LABEL, STATUS_TONE, type Scene, type Video } from '@/lib/types'
@@ -145,7 +145,65 @@ function AutoEditCard({ video }: { video: Video }) {
         )}
       </div>
       <p className="mt-2 text-[11px] text-ink-faint">Auto-edited: trims + zooms + captions. Style calibration pending your examples.</p>
+      <div className="mt-3 border-t border-line pt-3">
+        <InlineNote
+          videoId={video.id}
+          target="final"
+          triggerLabel="✎ Note on final"
+          placeholder="What should the edit do differently? Cuts, zooms, captions, pacing…"
+          savedTitle="Note on the final saved"
+        />
+      </div>
     </Card>
+  )
+}
+
+/* ————— tier notes: pin a note to one scene or to the auto-edited final ————— */
+function InlineNote({ videoId, target, scene, triggerLabel, placeholder, savedTitle }: {
+  videoId: string
+  target: 'scene' | 'final'
+  scene?: Scene
+  triggerLabel: string
+  placeholder: string
+  savedTitle: string
+}) {
+  const add = useAddFeedback()
+  const toast = useToast()
+  const [open, setOpen] = useState(false)
+  const [note, setNote] = useState('')
+
+  function save() {
+    const comment = note.trim()
+    if (!comment) return
+    add.mutate(
+      { video_id: videoId, kind: 'note', comment, target, scene_id: scene?.id, scene_idx: scene?.idx },
+      {
+        onSuccess: () => {
+          toast.push({ kind: 'ok', title: savedTitle, detail: 'The factory reads it on its next feedback intake.' })
+          setNote(''); setOpen(false)
+        },
+        onError: (e) => toast.push({ kind: 'err', title: 'Note not saved', detail: (e as Error).message }),
+      },
+    )
+  }
+
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)} className="text-[12px] font-medium text-accent hover:underline">
+        {triggerLabel}
+      </button>
+    )
+  }
+  return (
+    <div className="space-y-2">
+      <Textarea autoFocus rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder={placeholder} />
+      <div className="flex items-center gap-2">
+        <Button size="sm" variant="primary" disabled={!note.trim() || add.isPending} onClick={save}>
+          {add.isPending ? 'Saving…' : 'Save note'}
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => { setOpen(false); setNote('') }}>Cancel</Button>
+      </div>
+    </div>
   )
 }
 
@@ -223,6 +281,12 @@ function ScenePlayer({ scene }: { scene: Scene }) {
     staleTime: 45 * 60_000,
     queryFn: () => signedUrl(scene.storage_path!, 3600),
   })
+  const { data: dlUrl } = useQuery({
+    queryKey: ['scene-dl-url', scene.id],
+    enabled: !!scene.storage_path,
+    staleTime: 45 * 60_000,
+    queryFn: () => signedUrl(scene.storage_path!, 3600, `scene-${scene.idx}.mp4`),
+  })
   return (
     <div className="overflow-hidden rounded-(--radius-control) border border-line bg-raised">
       <div className="aspect-[9/16] w-full bg-black">
@@ -240,8 +304,8 @@ function ScenePlayer({ scene }: { scene: Scene }) {
           <div className="flex items-center gap-1.5">
             {scene.qc_verdict === 'PASS' && <Badge tone="ok">QC</Badge>}
             {scene.qc_verdict === 'FAIL' && <Badge tone="danger">{scene.qc_failure_class ?? 'QC'}</Badge>}
-            {url && (
-              <a href={url} download={`scene-${scene.idx}.mp4`} className="text-[12px] text-accent hover:underline">
+            {(dlUrl ?? url) && (
+              <a href={dlUrl ?? url} download={`scene-${scene.idx}.mp4`} className="text-[12px] text-accent hover:underline">
                 Download
               </a>
             )}
@@ -276,6 +340,14 @@ function ScenePlayer({ scene }: { scene: Scene }) {
           </details>
         )}
         <p className="text-[11px] text-ink-faint">{fmtBytes(scene.size_bytes)}</p>
+        <InlineNote
+          videoId={scene.video_id}
+          target="scene"
+          scene={scene}
+          triggerLabel="✎ Note"
+          placeholder={`What's off in scene ${scene.idx}? The factory pins this note to it…`}
+          savedTitle={`Note on scene ${scene.idx} saved`}
+        />
       </div>
     </div>
   )

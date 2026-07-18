@@ -8,10 +8,9 @@ import { supabase } from '@/lib/supabase'
 import { useToast } from '@/components/toast'
 import type { Adaptation, Command, Order } from '@/lib/types'
 import { fmtDate } from '@/lib/time'
-import { Badge, Button, Card, Empty, Input, PageHeader, Spinner } from '@/components/ui'
+import { Badge, Button, Card, Empty, Input, PageHeader, Spinner, Textarea } from '@/components/ui'
 
-const STALE_MS = 2.5 * 60_000        // PC pulse beats every 60s — 2.5 min of silence is real
-const BRAIN_STALE_MS = 5 * 60_000    // the brain stamps on its ~3-min cron — don't cry wolf between wakes
+const ONLINE_MS = 10 * 60_000        // Filipe's rule: factory seen < 10 min ago = ONLINE, else OFFLINE
 const GRACE_MS = 2 * 60_000
 
 export function ProductionPage() {
@@ -23,6 +22,8 @@ export function ProductionPage() {
       />
       <div className="space-y-6">
         <MissionControl />
+        <SectionHeading title="Chat" sub="Talk to Claude on the factory PC — questions, orders, course corrections." />
+        <ChatPanel />
         <SectionHeading title="Video Requests" sub="Ask the factory to make a video — from scratch or copying a winner." />
         <InjectBar />
         <Queue />
@@ -52,10 +53,7 @@ function MissionControl() {
   const toast = useToast()
   const [editingGoals, setEditingGoals] = useState(false)
 
-  const now = Date.now()
-  const pcAlive = fs?.heartbeat && now - +new Date(fs.heartbeat.at) < STALE_MS
-  const brainAlive = fs?.status && now - +new Date(fs.status.alive_at) < BRAIN_STALE_MS
-  const autoRun = fs?.status?.auto_run ?? true
+  const online = !!fs?.status && Date.now() - +new Date(fs.status.alive_at) < ONLINE_MS
   const pool = fs?.heartbeat?.pool ?? {}
   const sum = (pred: (k: string) => boolean) =>
     Object.entries(pool).filter(([k]) => pred(k)).reduce((a, [, n]) => a + n, 0)
@@ -63,38 +61,23 @@ function MissionControl() {
   const executing = sum((k) => k.endsWith(':executing'))
   const rendered = sum((k) => k.endsWith(':generated') || k.endsWith(':fetched'))
 
-  function toggleAuto() {
-    const type = autoRun ? 'pause_auto' : 'resume_auto'
-    send.mutate({ type }, {
-      onSuccess: () => toast.push({ kind: 'ok', title: autoRun ? 'Pause sent' : 'Resume sent', detail: 'The factory confirms on its next check-in (≤2 min).' }),
-    })
-  }
-
   return (
     <Card className="p-5">
       <div className="flex flex-wrap items-center gap-x-8 gap-y-4">
-        <div className="flex items-center gap-6">
-          <StatusDot label="PC" on={!!pcAlive} detail={fs?.heartbeat ? `pulse ${fmtAgo(fs.heartbeat.at)}` : 'no pulse yet'} />
-          <StatusDot label="Factory brain" on={!!brainAlive} detail={fs?.status ? `seen ${fmtAgo(fs.status.alive_at)}` : 'Claude not running'} />
-        </div>
-
-        <div className="flex items-center gap-2">
-          <span className="text-[12px] text-ink-muted">Auto-run</span>
-          <button
-            onClick={toggleAuto}
-            disabled={send.isPending}
-            aria-label="Toggle auto-run"
+        <div>
+          <span
             className={[
-              'relative h-6 w-11 rounded-full border transition-colors duration-200',
-              autoRun ? 'border-ok/50 bg-ok/30' : 'border-line bg-raised',
+              'inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-[14px] font-bold uppercase tracking-widest',
+              online ? 'border-ok/50 bg-ok/15 text-ok' : 'border-danger/50 bg-danger/15 text-danger',
             ].join(' ')}
           >
-            <span className={[
-              'absolute top-0.5 h-4.5 w-4.5 rounded-full bg-white shadow transition-all duration-200',
-              autoRun ? 'left-[calc(100%-1.25rem)]' : 'left-0.5',
-            ].join(' ')} />
-          </button>
-          <Badge tone={autoRun ? 'ok' : 'warn'}>{autoRun ? 'running' : 'paused'}</Badge>
+            <span className={`h-2.5 w-2.5 rounded-full ${online ? 'bg-ok shadow-[0_0_8px] shadow-ok/70' : 'bg-danger'}`} />
+            {online ? 'Online' : 'Offline'}
+          </span>
+          <p className="mt-1.5 text-[11px] text-ink-faint">
+            {fs?.status ? `factory seen ${fmtAgo(fs.status.alive_at)}` : 'factory never seen'}
+            {fs?.heartbeat ? ` · PC pulse ${fmtAgo(fs.heartbeat.at)}` : ''}
+          </p>
         </div>
 
         <div className="flex items-center gap-4 text-[12px] text-ink-muted">
@@ -124,16 +107,6 @@ function MissionControl() {
 
       {editingGoals && <GoalsEditor onDone={() => setEditingGoals(false)} />}
     </Card>
-  )
-}
-
-function StatusDot({ label, on, detail }: { label: string; on: boolean; detail: string }) {
-  return (
-    <span className="flex items-center gap-2">
-      <span className={`h-2.5 w-2.5 rounded-full ${on ? 'bg-ok shadow-[0_0_6px] shadow-ok/60' : 'bg-line-strong'}`} />
-      <span className="text-[13px] font-semibold text-ink">{label}</span>
-      <span className="text-[11px] text-ink-faint">{detail}</span>
-    </span>
   )
 }
 
@@ -286,7 +259,15 @@ function InjectBar() {
 
 /* ————— the queue (FIFO) ————— */
 
-const QUEUE_STATUSES: Order['status'][] = ['queued', 'in_production', 'produced', 'failed']
+const ACTIVE_STATUSES: Order['status'][] = ['queued', 'in_production']
+const HISTORY_STATUSES: Order['status'][] = ['produced', 'failed', 'canceled']
+
+/** Newest first — history reads like a log. */
+function historyOf(orders: Order[] | undefined, schedule: boolean): Order[] {
+  return (orders ?? [])
+    .filter((o) => (o.kind === 'schedule') === schedule && HISTORY_STATUSES.includes(o.status))
+    .sort((a, b) => +new Date(b.produced_at ?? b.created_at) - +new Date(a.produced_at ?? a.created_at))
+}
 
 function Queue() {
   const { data: orders, isLoading } = useOrders()
@@ -297,9 +278,11 @@ function Queue() {
 
   const queue = useMemo(() =>
     (orders ?? [])
-      .filter((o) => o.kind !== 'schedule' && QUEUE_STATUSES.includes(o.status))
+      .filter((o) => o.kind !== 'schedule' && ACTIVE_STATUSES.includes(o.status))
       .sort((a, b) => (b.priority - a.priority) || (+new Date(a.created_at) - +new Date(b.created_at))),
   [orders])
+
+  const history = useMemo(() => historyOf(orders, false), [orders])
 
   const held = useMemo(() =>
     (orders ?? [])
@@ -340,7 +323,7 @@ function Queue() {
 
       {isLoading && <div className="flex justify-center py-10"><Spinner className="h-5 w-5" /></div>}
       {!isLoading && queue.length === 0 && held.length === 0 && (
-        <Empty title="The queue is empty" hint="Inject a video above — from scratch or a winner to copy. The factory works the FIFO head first." />
+        <Empty title="The queue is clear" hint="Inject a video above — from scratch or a winner to copy. The factory works the FIFO head first." />
       )}
 
       <ul className="divide-y divide-line">
@@ -369,7 +352,54 @@ function Queue() {
           </ul>
         </div>
       )}
+
+      <OrderHistory orders={history} slugById={slugById} />
     </Card>
+  )
+}
+
+/* ————— history: finished orders leave the queue but stay one click away ————— */
+
+function OrderHistory({ orders, slugById }: { orders: Order[]; slugById: Map<string, string> }) {
+  const [open, setOpen] = useState(false)
+  if (orders.length === 0) return null
+  return (
+    <div className="mt-4 border-t border-line pt-3">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 text-left text-[12px] font-medium text-ink-muted transition-colors hover:text-ink"
+      >
+        <span className={`inline-block transition-transform duration-150 ${open ? 'rotate-90' : ''}`}>▸</span>
+        History
+        <span className="text-ink-faint">({orders.length})</span>
+      </button>
+      {open && (
+        <ul className="mt-2 divide-y divide-line">
+          {orders.map((o) => (
+            <HistoryRow key={o.id} order={o} producedSlug={o.video_id ? slugById.get(o.video_id) ?? null : null} />
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function HistoryRow({ order: o, producedSlug }: { order: Order; producedSlug: string | null }) {
+  return (
+    <li className="flex items-center gap-3 py-2.5 opacity-90">
+      <span className="w-7 shrink-0" />
+      <OrderThumb order={o} />
+      <Badge tone={KIND_BADGE[o.kind].tone}>{KIND_BADGE[o.kind].label}</Badge>
+      {o.notes && <span className="hidden max-w-60 truncate text-[11px] text-ink-muted sm:inline">{o.notes}</span>}
+      <span className="text-[11px] text-ink-faint">{fmtDate(o.produced_at ?? o.created_at)}</span>
+      <span className="flex-1" />
+      {o.status === 'produced' && producedSlug && (
+        <Link className="text-[12px] text-accent hover:underline" to={`/videos/${producedSlug}`}>Open →</Link>
+      )}
+      {o.status === 'produced' && <Badge tone="ok">produced</Badge>}
+      {o.status === 'failed' && <Badge tone="danger">failed</Badge>}
+      {o.status === 'canceled' && <Badge tone="muted">canceled</Badge>}
+    </li>
   )
 }
 
@@ -502,9 +532,11 @@ function SchedulePool() {
 
   const pool = useMemo(() =>
     (orders ?? [])
-      .filter((o) => o.kind === 'schedule' && QUEUE_STATUSES.includes(o.status))
+      .filter((o) => o.kind === 'schedule' && ACTIVE_STATUSES.includes(o.status))
       .sort((a, b) => (b.priority - a.priority) || (+new Date(a.created_at) - +new Date(b.created_at))),
   [orders])
+
+  const history = useMemo(() => historyOf(orders, true), [orders])
 
   const slugById = useMemo(() => new Map((videos ?? []).map((v) => [v.id, v.slug])), [videos])
 
@@ -569,6 +601,110 @@ function SchedulePool() {
           ))}
         </ul>
       )}
+
+      <OrderHistory orders={history} slugById={slugById} />
+    </Card>
+  )
+}
+
+/* ————— chat: the website talks to Claude on the factory PC ————— */
+
+interface ChatMessage {
+  id: string
+  sender: 'filipe' | 'claude'
+  text: string
+  created_at: string
+  read_at: string | null
+}
+
+function ChatPanel() {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const [text, setText] = useState('')
+  const [sending, setSending] = useState(false)
+  const listRef = useRef<HTMLDivElement>(null)
+
+  const { data: messages } = useQuery({
+    queryKey: ['chat-messages'],
+    refetchInterval: 5_000, // polling floor — the realtime subscription below makes it instant when enabled
+    queryFn: async (): Promise<ChatMessage[]> => {
+      const { data, error } = await supabase
+        .from('chat_messages').select('*')
+        .order('created_at', { ascending: false }).limit(200)
+      if (error) return [] // table ships with migration 0013 — stay quiet if it isn't there yet
+      return (data as ChatMessage[]).reverse()
+    },
+  })
+
+  useEffect(() => {
+    const ch = supabase
+      .channel('chat-messages')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' },
+        () => void qc.invalidateQueries({ queryKey: ['chat-messages'] }))
+      .subscribe()
+    return () => { void supabase.removeChannel(ch) }
+  }, [qc])
+
+  const count = messages?.length ?? 0
+  useEffect(() => {
+    const el = listRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [count])
+
+  async function sendMsg() {
+    const t = text.trim()
+    if (!t || sending) return
+    setSending(true)
+    try {
+      const { error } = await supabase.from('chat_messages').insert({ sender: 'filipe', text: t })
+      if (error) throw new Error(error.message)
+      setText('')
+      void qc.invalidateQueries({ queryKey: ['chat-messages'] })
+    } catch (e) {
+      toast.push({ kind: 'err', title: 'Message not sent', detail: (e as Error).message })
+    } finally {
+      setSending(false)
+    }
+  }
+
+  return (
+    <Card className="p-5">
+      <div ref={listRef} className="max-h-80 space-y-2.5 overflow-y-auto pr-1">
+        {count === 0 && (
+          <p className="py-6 text-center text-[12px] text-ink-faint">No messages yet — say something to the factory.</p>
+        )}
+        {(messages ?? []).map((m) => (
+          <div key={m.id} className={`flex ${m.sender === 'filipe' ? 'justify-end' : 'justify-start'}`}>
+            <div
+              className={[
+                'max-w-[75%] rounded-(--radius-control) border px-3 py-2',
+                m.sender === 'filipe' ? 'border-accent/30 bg-accent/10' : 'border-line bg-raised',
+              ].join(' ')}
+            >
+              <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-ink">{m.text}</p>
+              <p className="mt-1 text-right text-[10px] text-ink-faint">
+                {m.sender === 'filipe' ? 'you' : 'Claude'} · {fmtDate(m.created_at)}
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 flex items-end gap-2 border-t border-line pt-3">
+        <Textarea
+          rows={1}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void sendMsg() }
+          }}
+          placeholder="Message the factory…"
+          className="flex-1"
+        />
+        <Button variant="primary" disabled={!text.trim() || sending} onClick={() => void sendMsg()}>
+          {sending ? <Spinner className="h-4 w-4" /> : 'Send'}
+        </Button>
+      </div>
+      <p className="mt-2 text-[11px] text-ink-faint">Claude replies from the factory PC — usually under a minute.</p>
     </Card>
   )
 }

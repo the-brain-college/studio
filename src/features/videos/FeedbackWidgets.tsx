@@ -319,6 +319,8 @@ export function FeedbackRow({ f }: { f: Feedback }) {
         {f.kind === 'reject' && <Badge tone="danger">rejected</Badge>}
         {f.kind === 'rating' && f.stars && <Stars value={f.stars} />}
         {f.kind === 'note' && <Badge tone="info">note</Badge>}
+        {f.target === 'scene' && <Badge tone="accent">scene {f.scene_idx ?? '?'}</Badge>}
+        {f.target === 'final' && <Badge tone="accent">final cut</Badge>}
         {f.retracted_at && <Badge tone="muted">undone</Badge>}
         <span className="text-ink-faint">{fmtDate(f.created_at)}</span>
         {!f.retracted_at && (f.acknowledged_at ? (

@@ -31,6 +31,7 @@ export interface Video {
 }
 
 export type FeedbackKind = 'reject' | 'rating' | 'note'
+export type FeedbackTarget = 'video' | 'scene' | 'final'
 
 export type OrderKind = 'copy' | 'scratch' | 'schedule'
 export type OrderStatus = 'pool' | 'queued' | 'in_production' | 'produced' | 'failed' | 'canceled'
@@ -87,6 +88,9 @@ export interface Feedback {
   id: number
   video_id: string
   kind: FeedbackKind
+  target: FeedbackTarget
+  scene_id: string | null
+  scene_idx: number | null
   stars: number | null
   comment: string | null
   created_at: string
