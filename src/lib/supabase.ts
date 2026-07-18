@@ -22,9 +22,9 @@ export function useSession() {
   return session // undefined = loading, null = signed out
 }
 
-/** Short-lived signed URL for a private storage object. */
-export async function signedUrl(path: string, expiresIn = 3600): Promise<string> {
-  const { data, error } = await supabase.storage.from('media').createSignedUrl(path, expiresIn)
+/** Short-lived signed URL for a private storage object. Pass `download` (a filename) for a URL that saves as a file instead of playing inline. */
+export async function signedUrl(path: string, expiresIn = 3600, download?: string): Promise<string> {
+  const { data, error } = await supabase.storage.from('media').createSignedUrl(path, expiresIn, download ? { download } : undefined)
   if (error || !data) throw error ?? new Error('no signed url')
   return data.signedUrl
 }

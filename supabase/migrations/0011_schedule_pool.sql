@@ -15,3 +15,6 @@ alter table public.videos add column if not exists analysis jsonb;
 alter table public.videos add column if not exists final_path text;
 
 notify pgrst, 'reload schema';
+
+alter table public.videos add column if not exists final_size_bytes bigint;
+alter table public.videos add column if not exists final_uploaded_at timestamptz;
