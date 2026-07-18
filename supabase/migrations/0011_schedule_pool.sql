@@ -10,4 +10,8 @@ alter table public.orders add constraint orders_kind_check
 
 alter table public.videos add column if not exists analysis jsonb;
 
+-- Editor output (edit-reel.cjs): the auto-edited Final.mp4 lands in storage at
+-- finals/<slug>/final.mp4; final_path lets the studio surface it next to the preview.
+alter table public.videos add column if not exists final_path text;
+
 notify pgrst, 'reload schema';
