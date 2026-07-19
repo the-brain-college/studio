@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useSearchParams } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAllFeedback, useAnalytics, useAppState, useFactoryState, useVideos } from '@/lib/queries'
-import { fmtBytes } from '@/lib/time'
 import { Badge, Button } from '@/components/ui'
 import { GROUP_META, GROUP_ORDER, rejectedIdSet, workflowGroup, type WorkflowGroup } from '@/features/videos/video-utils'
 
@@ -180,42 +179,52 @@ function WorkflowLinks() {
 
 function QuickActions() {
   const { data: a } = useAnalytics()
-  const { data: storage } = useAppState('storage')
-  const used = Number(storage?.used_bytes ?? 0)
-  const pct = Math.min(100, Math.round((used / (1024 * 1024 * 1024)) * 100))
+  const { data: usage } = useAppState('usage')
+  const rw = (usage as { railway?: { estCostUsd?: number; planCreditUsd?: number; pct?: number; error?: string } })?.railway
+  const sb = (usage as { supabase?: { db_gb?: number; db_free_gb?: number; db_pct?: number; storage_gb?: number; storage_free_gb?: number; storage_pct?: number } })?.supabase
   return (
     <div className="mt-6 space-y-3 border-t border-line pt-4">
       <p className="px-3 text-[11px] uppercase tracking-wider text-ink-faint">Quick actions</p>
-      <div className="space-y-2 px-3 text-[12px] text-ink-muted">
+      <div className="space-y-2.5 px-3 text-[12px] text-ink-muted">
         <p className="flex justify-between"><span>Awaiting edit</span><Badge tone="info">{a?.ingested ?? '–'}</Badge></p>
         <p className="flex justify-between"><span>In queue</span><Badge tone="accent">{a?.queue_depth ?? '–'}</Badge></p>
-        <div>
-          <p className="mb-1 flex justify-between"><span>Storage</span><span>{fmtBytes(used)} / 1 GB</span></p>
-          <div className="h-1 w-full rounded-full bg-raised">
-            <div className={`h-full rounded-full ${pct > 80 ? 'bg-warn' : 'bg-accent'}`} style={{ width: `${pct}%` }} />
-          </div>
-        </div>
-        <a
-          className="block text-accent hover:underline"
-          href="https://studio.youtube.com"
-          target="_blank"
-          rel="noreferrer"
-        >
-          YouTube Studio ↗
-        </a>
+        <p className="pt-1.5 text-[10px] uppercase tracking-wider text-ink-faint">Usage</p>
+        <UsageBar label="Railway" value={rw?.error ? 'n/a' : `~$${rw?.estCostUsd ?? '–'}/mo`} sub={`of $${rw?.planCreditUsd ?? 5}`} pct={rw?.pct} />
+        <UsageBar label="Supabase DB" value={`${sb?.db_gb ?? '–'} GB`} sub={`of ${sb?.db_free_gb ?? 0.5}`} pct={sb?.db_pct} />
+        <UsageBar label="Supabase files" value={`${sb?.storage_gb ?? '–'} GB`} sub={`of ${sb?.storage_free_gb ?? 1}`} pct={sb?.storage_pct} />
+        <a className="block pt-1 text-accent hover:underline" href="https://studio.youtube.com" target="_blank" rel="noreferrer">YouTube Studio ↗</a>
       </div>
     </div>
   )
 }
 
+function UsageBar({ label, value, sub, pct }: { label: string; value: string; sub: string; pct?: number | null }) {
+  const p = Math.min(100, Math.max(0, pct ?? 0))
+  const tone = (pct ?? 0) >= 100 ? 'bg-danger' : p >= 75 ? 'bg-warn' : 'bg-accent'
+  return (
+    <div title={pct != null ? `${pct}%` : undefined}>
+      <p className="mb-1 flex items-baseline justify-between gap-2">
+        <span>{label}</span>
+        <span className="text-ink-faint">{value} <span className="text-[10px]">{sub}</span></span>
+      </p>
+      <div className="h-1 w-full rounded-full bg-raised"><div className={`h-full rounded-full ${tone}`} style={{ width: `${p}%` }} /></div>
+    </div>
+  )
+}
+
 function StorageBanner() {
-  const { data: storage } = useAppState('storage')
-  const warning = storage?.warning as string | undefined
-  if (!warning) return <div className="flex-1" />
+  // usage warning banner — Railway over its credit, or Supabase DB/storage near the free-tier cap
+  const { data: usage } = useAppState('usage')
+  const u = usage as { railway?: { estCostUsd?: number; planCreditUsd?: number; pct?: number }; supabase?: { db_gb?: number; db_free_gb?: number; db_pct?: number; storage_gb?: number; storage_free_gb?: number; storage_pct?: number } } | undefined
+  const warns: string[] = []
+  if ((u?.railway?.pct ?? 0) >= 100) warns.push(`Railway ~$${u!.railway!.estCostUsd}/mo — over the $${u!.railway!.planCreditUsd} credit`)
+  if ((u?.supabase?.storage_pct ?? 0) >= 90) warns.push(`Supabase files ${u!.supabase!.storage_gb}/${u!.supabase!.storage_free_gb} GB`)
+  if ((u?.supabase?.db_pct ?? 0) >= 90) warns.push(`Supabase DB ${u!.supabase!.db_gb}/${u!.supabase!.db_free_gb} GB`)
+  if (!warns.length) return <div className="flex-1" />
   return (
     <div className="flex flex-1 items-center gap-2 overflow-hidden">
-      <Badge tone="warn">storage</Badge>
-      <p className="truncate text-[12px] text-warn">{warning}</p>
+      <Badge tone="warn">usage</Badge>
+      <p className="truncate text-[12px] text-warn">{warns.join(' · ')}</p>
     </div>
   )
 }
