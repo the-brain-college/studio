@@ -21,7 +21,9 @@ async function sendFile(res, file, code = 200) {
   res.writeHead(code, {
     'Content-Type': ct,
     'Cache-Control': immutable ? 'public, max-age=31536000, immutable' : 'no-cache',
-    'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'no-referrer',
+    // SAMEORIGIN (not DENY) so the studio can frame itself for responsive QA harnesses;
+    // cross-site framing (clickjacking) is still blocked.
+    'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'SAMEORIGIN', 'Referrer-Policy': 'no-referrer',
   })
   res.end(data)
 }
