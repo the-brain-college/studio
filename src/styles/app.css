@@ -111,6 +111,14 @@ label:has(> input:is([type="file"], [type="checkbox"], [type="radio"])),
 a[href] { cursor: pointer; }
 button:disabled, button[disabled], [aria-disabled="true"] { cursor: not-allowed; }
 
+/* ————— touch vs pointer (responsive rule #1: no hover-only controls) —————
+   Custom variants so components can express "enhance on a real pointer, but never HIDE a
+   control behind :hover" — on touch screens :hover never fires, so anything gated purely on
+   group-hover is invisible and unusable. Pattern: default the control to visible; use
+   `can-hover:` to fade it in on pointer devices, and `no-hover:` for touch-only affordances. */
+@custom-variant can-hover (@media (hover: hover) and (pointer: fine));
+@custom-variant no-hover  (@media (hover: none), (pointer: coarse));
+
 /* toast + micro-motion */
 @keyframes toast-in { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
 @keyframes fade-up { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
