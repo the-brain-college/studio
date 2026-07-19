@@ -141,7 +141,7 @@ export function ReviewWizard({ video, scenes, n, onClose }: {
 
   return (
     <div className="fixed inset-0 z-50 flex bg-black/75 p-0 backdrop-blur-[2px] sm:items-center sm:justify-center sm:p-4">
-      <div className="flex h-full w-full flex-col overflow-hidden bg-surface shadow-2xl shadow-black/40 sm:h-auto sm:max-h-[92vh] sm:max-w-4xl sm:rounded-(--radius-card) sm:border sm:border-line">
+      <div className="flex h-full w-full flex-col overflow-hidden bg-surface shadow-2xl shadow-black/40 sm:h-auto sm:max-h-[90vh] sm:max-w-3xl sm:rounded-(--radius-card) sm:border sm:border-line">
         {/* header */}
         <div className="flex shrink-0 items-center gap-3 border-b border-line px-4 py-3 sm:px-5">
           <div className="min-w-0 flex-1">
@@ -184,14 +184,18 @@ export function ReviewWizard({ video, scenes, n, onClose }: {
               setDecision={setDecision}
             />
           ) : (
-            <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:items-start">
-              {/* video */}
-              <div className="mx-auto w-full max-w-[300px] overflow-hidden rounded-(--radius-control) border border-line bg-black md:mx-0 md:max-w-none">
-                <div className="aspect-[9/16] w-full">
+            <div className="grid gap-5 md:grid-cols-[auto_minmax(0,1fr)] md:items-start">
+              {/* video — sized by HEIGHT (capped) so the whole step fits the viewport without
+                  scrolling; width follows the 9:16 aspect from that height. */}
+              <div className="flex justify-center md:block">
+                <div
+                  className="overflow-hidden rounded-(--radius-control) border border-line bg-black"
+                  style={{ height: 'min(58vh, 500px)', aspectRatio: '9 / 16' }}
+                >
                   {path && url ? (
                     <video src={url} controls autoPlay playsInline preload="metadata" className="h-full w-full object-contain" />
                   ) : (
-                    <div className="flex h-full items-center justify-center text-small text-ink-faint">
+                    <div className="flex h-full items-center justify-center px-3 text-center text-small text-ink-faint">
                       {path ? <Spinner /> : 'clip purged — master on the PC'}
                     </div>
                   )}
