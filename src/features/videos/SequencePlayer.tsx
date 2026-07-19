@@ -29,10 +29,11 @@ export function SequencePlayer({ video, scenes, n, onClose }: { video: Video; sc
     <Dialog.Root open onOpenChange={(open) => !open && onClose()}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/80" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[min(92vw,420px)] -translate-x-1/2 -translate-y-1/2 focus:outline-none">
+        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 flex max-h-[94dvh] w-auto max-w-[94vw] -translate-x-1/2 -translate-y-1/2 flex-col overflow-y-auto focus:outline-none">
           <Dialog.Title className="sr-only">{prettyName(video)}</Dialog.Title>
           <div className="overflow-hidden rounded-(--radius-card) border border-line bg-surface">
-            <div className="relative aspect-[9/16] w-full bg-black">
+            {/* height-driven so video + verdict + caption + scene dots all fit without clipping */}
+            <div className="relative mx-auto bg-black" style={{ height: 'min(58dvh, 520px)', aspectRatio: '9 / 16', maxWidth: '94vw' }}>
               {current && url ? (
                 <video
                   key={current.id}
@@ -68,9 +69,9 @@ export function SequencePlayer({ video, scenes, n, onClose }: { video: Video; sc
             <VerdictBar video={video} n={n} />
             <div className="space-y-1 p-3">
               {current?.spoken && <p className="text-[13px] leading-relaxed text-ink">“{current.spoken}”</p>}
-              <div className="flex items-center justify-between">
-                <p className="text-[11px] text-ink-faint">{prettyName(video)} · scene {i + 1} of {playable.length}</p>
-                <div className="flex gap-1">
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+                <p className="min-w-0 truncate text-[11px] text-ink-faint">{prettyName(video)} · scene {i + 1} of {playable.length}</p>
+                <div className="flex flex-wrap gap-1">
                   {playable.map((s, idx) => (
                     <button
                       key={s.id}

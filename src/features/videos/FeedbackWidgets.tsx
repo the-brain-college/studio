@@ -126,7 +126,7 @@ function RejectModal({ video, onClose }: { video: Video; onClose: () => void }) 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-[2px]" onClick={onClose}>
-      <Card className="w-full max-w-lg p-6 animate-[fade-up_.18s_ease-out]" onClick={(e) => e.stopPropagation()}>
+      <Card className="max-h-[90dvh] w-full max-w-lg overflow-y-auto p-6 animate-[fade-up_.18s_ease-out]" onClick={(e) => e.stopPropagation()}>
         <h2 className="text-[16px] font-semibold">Reject this video</h2>
         <p className="mb-4 mt-1 text-[12px] leading-relaxed text-ink-muted">
           Explain what is wrong. This goes straight into the factory's feedback store — the team reads it,
@@ -172,7 +172,7 @@ export function BulkRejectModal({ videos, onClose, onDone }: { videos: Video[]; 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-[2px]" onClick={onClose}>
-      <Card className="w-full max-w-lg p-6 animate-[fade-up_.18s_ease-out]" onClick={(e) => e.stopPropagation()}>
+      <Card className="max-h-[90dvh] w-full max-w-lg overflow-y-auto p-6 animate-[fade-up_.18s_ease-out]" onClick={(e) => e.stopPropagation()}>
         <h2 className="text-[16px] font-semibold">Reject {videos.length} video{videos.length === 1 ? '' : 's'}</h2>
         <p className="mb-4 mt-1 text-[12px] leading-relaxed text-ink-muted">
           One reason, applied to every selected video. It goes straight into the factory's feedback store.

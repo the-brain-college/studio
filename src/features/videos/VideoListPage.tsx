@@ -245,6 +245,10 @@ export function VideoListPage() {
   )
 }
 
+// compact, full-width touch action button (used only on no-hover devices in the card footer)
+const TOUCH_ACTION =
+  'flex h-9 flex-1 items-center justify-center gap-1.5 rounded-(--radius-control) border border-line bg-raised text-[12px] font-medium text-ink-muted transition-colors active:scale-95 active:bg-overlay disabled:opacity-50'
+
 const GROUP_BADGE: Record<WorkflowGroup, { tone: 'info' | 'warn' | 'accent' | 'ok' | 'danger'; label: string }> = {
   new: { tone: 'info', label: 'Pending' },
   revising: { tone: 'warn', label: 'Revising' },
@@ -313,13 +317,15 @@ function VideoCard({ video: v, n, group, stars, isSelected, selectionActive, onT
               isSelected
                 ? 'border-accent bg-accent text-[#04211d] opacity-100'
                 : 'border-white/80 bg-black/45 text-transparent hover:border-white',
-              selectionActive || isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+              // visible on touch (no hover to reveal it) so a selection can always be started
+              selectionActive || isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 no-hover:opacity-100',
             ].join(' ')}
           >
             <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
           </button>
-          {/* hover overlay: big centered play, small actions underneath */}
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-black/55 opacity-0 backdrop-blur-[1px] transition-opacity duration-200 group-hover:opacity-100">
+          {/* hover overlay: big centered play, small actions underneath — pointer devices only
+              (on touch it never reveals, so it is removed there and the persistent bar below takes over) */}
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-black/55 opacity-0 backdrop-blur-[1px] transition-opacity duration-200 group-hover:opacity-100 no-hover:hidden">
             <button
               aria-label="Play preview"
               className="flex h-16 w-16 items-center justify-center rounded-full bg-white/95 text-black shadow-lg transition-transform duration-150 hover:scale-110 active:scale-95"
@@ -379,6 +385,32 @@ function VideoCard({ video: v, n, group, stars, isSelected, selectionActive, onT
               )}
             </div>
           </div>
+        </div>
+        {/* touch-only action bar: the hover overlay never appears on phones/tablets, so surface
+            the same actions persistently here (visible only where there's no hover). */}
+        <div className="hidden items-center gap-1.5 border-t border-line px-3 py-2 no-hover:flex">
+          <button onClick={() => setPlaying(true)} className={TOUCH_ACTION} aria-label="Play preview">
+            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor"><path d="M8 5.5v13l11-6.5z" /></svg>
+            Play
+          </button>
+          <button onClick={() => navigate(`/videos/${v.slug}`)} className={TOUCH_ACTION} aria-label="Open video">
+            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3" /></svg>
+            Open
+          </button>
+          <button onClick={() => void zip()} disabled={zipBusy} className={TOUCH_ACTION} aria-label="Download all scenes">
+            {zipBusy ? <Spinner className="h-4 w-4" /> : <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>}
+            Get
+          </button>
+          {group === 'approved' && (
+            <button onClick={() => unapprove.mutate(v, { onSuccess: () => toast.push({ kind: 'ok', title: 'Moved back to Pending', detail: displayName(v, n) }) })} className={TOUCH_ACTION} aria-label="Move back to Pending">
+              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3" /></svg>
+            </button>
+          )}
+          {group === 'rejected' && (
+            <button onClick={() => undoReject.mutate(v, { onSuccess: () => toast.push({ kind: 'ok', title: 'Rejection undone', detail: displayName(v, n) }) })} className={TOUCH_ACTION} aria-label="Undo rejection">
+              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3" /></svg>
+            </button>
+          )}
         </div>
         <div className="space-y-1 p-3">
           <Link to={`/videos/${v.slug}`} className="block truncate text-[13px] font-semibold text-ink transition-colors hover:text-accent">

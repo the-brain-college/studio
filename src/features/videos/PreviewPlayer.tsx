@@ -22,10 +22,12 @@ export function PreviewPlayer({ video, n, onClose }: { video: Video; n?: number;
     <Dialog.Root open onOpenChange={(open) => !open && onClose()}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/80" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[min(92vw,420px)] -translate-x-1/2 -translate-y-1/2 focus:outline-none">
+        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 flex max-h-[94dvh] w-auto max-w-[94vw] -translate-x-1/2 -translate-y-1/2 flex-col overflow-y-auto focus:outline-none">
           <Dialog.Title className="sr-only">{prettyName(video)}</Dialog.Title>
           <div className="overflow-hidden rounded-(--radius-card) border border-line bg-surface">
-            <div className="relative aspect-[9/16] w-full bg-black">
+            {/* height-driven (not width-driven) so the whole card — video + verdict + caption —
+                always fits a short/landscape phone without clipping the controls below */}
+            <div className="relative mx-auto bg-black" style={{ height: 'min(64dvh, 540px)', aspectRatio: '9 / 16', maxWidth: '94vw' }}>
               {url ? (
                 <video src={url} autoPlay controls className="h-full w-full object-contain" />
               ) : (

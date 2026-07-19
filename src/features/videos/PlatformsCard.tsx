@@ -78,7 +78,7 @@ function MetaModal({ video, onClose }: { video: Video; onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-[2px]" onClick={onClose}>
-      <Card className="w-full max-w-lg p-6 animate-[fade-up_.18s_ease-out]" onClick={(e) => e.stopPropagation()}>
+      <Card className="max-h-[90dvh] w-full max-w-lg overflow-y-auto p-6 animate-[fade-up_.18s_ease-out]" onClick={(e) => e.stopPropagation()}>
         <div className="mb-1 flex items-center justify-between gap-3">
           <h2 className="text-[16px] font-semibold">Schedule on Meta — {prettyName(video)}</h2>
           {video.meta_scheduled_at && <Badge tone="ok">scheduled</Badge>}
@@ -87,21 +87,25 @@ function MetaModal({ video, onClose }: { video: Video; onClose: () => void }) {
           FB and IG are paired: copy this caption, schedule both in Meta Business Suite at the same
           time, then mark it done here.
         </p>
-        <div className="relative rounded-(--radius-control) border border-line bg-raised p-3">
-          <p className="max-h-56 overflow-y-auto whitespace-pre-wrap pr-2 text-[13px] leading-relaxed text-ink">{caption}</p>
-          <Button
-            size="sm"
-            className="absolute right-2 top-2"
-            onClick={() => {
-              void navigator.clipboard.writeText(caption)
-              setCopied(true)
-              setTimeout(() => setCopied(false), 1500)
-            }}
-          >
-            {copied ? '✓ Copied' : 'Copy caption'}
-          </Button>
+        <div className="rounded-(--radius-control) border border-line bg-raised p-3">
+          {/* header row keeps the Copy button off the caption text (no overlap at any width) */}
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Caption</span>
+            <Button
+              size="sm"
+              className="shrink-0"
+              onClick={() => {
+                void navigator.clipboard.writeText(caption)
+                setCopied(true)
+                setTimeout(() => setCopied(false), 1500)
+              }}
+            >
+              {copied ? '✓ Copied' : 'Copy caption'}
+            </Button>
+          </div>
+          <p className="max-h-56 overflow-y-auto whitespace-pre-wrap text-[13px] leading-relaxed text-ink">{caption}</p>
         </div>
-        <div className="mt-4 flex items-center justify-between gap-2">
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <a
             className="text-[12px] text-accent hover:underline"
             href="https://business.facebook.com/latest/planner"
@@ -110,7 +114,7 @@ function MetaModal({ video, onClose }: { video: Video; onClose: () => void }) {
           >
             Open Meta Business Suite ↗
           </a>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button variant="ghost" onClick={onClose}>Close</Button>
             {video.meta_scheduled_at ? (
               <Button
