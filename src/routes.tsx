@@ -10,10 +10,12 @@ import { FeedbackPage } from './features/feedback/FeedbackPage'
 import { ProductionPage } from './features/production/ProductionPage'
 import { AnalyticsPage } from './features/analytics/AnalyticsPage'
 import { StoryPage } from './features/story/StoryPage'
+import { QAHarness } from './features/dev/QAHarness'
 
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
   { path: '/set-password', element: <SetPasswordPage /> },
+  { path: '/__qa', element: <QAHarness /> }, // dev: responsive QA harness (phone/tablet/desktop frames)
   {
     path: '/',
     element: (

@@ -226,7 +226,9 @@ export function VideoListPage() {
         />
       )}
 
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5">
+      {/* 2-up through the tablet range (the sidebar goes permanent at md, eating ~264px),
+          then denser only once there's real width — avoids cramped ~160px cards on tablet */}
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
         {filtered.map((v) => (
           <VideoCard
             key={v.id}
