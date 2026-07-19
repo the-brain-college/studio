@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { signedUrl } from '@/lib/supabase'
 import { useAddFeedback } from '@/lib/queries'
@@ -61,6 +61,20 @@ export function ReviewWizard({ video, scenes, n, onClose }: {
     staleTime: 45 * 60_000,
     queryFn: () => signedUrl(path!, 3600),
   })
+
+  // COPY videos carry a stored reference clip; each scene maps to a time-range in it (src_start/end).
+  // We show the original beside Louis's scene. The reference file purges 7 days after production —
+  // if the signed URL fails, refUrl is undefined and the layout degrades to Louis's clip alone.
+  const isCopy = !!video.reference_path
+  const { data: refUrl } = useQuery({
+    queryKey: ['review-ref', video.reference_path],
+    enabled: isCopy,
+    staleTime: 45 * 60_000,
+    retry: false,
+    queryFn: () => signedUrl(video.reference_path!, 3600),
+  })
+  const sceneHasSource = step.kind === 'scene' && step.scene.src_start != null && step.scene.src_end != null
+  const showPair = isCopy && sceneHasSource && !!refUrl
 
   function sceneDraft(idx: number) { return sceneDrafts[idx] ?? blank() }
   function patchScene(idx: number, d: Partial<Draft>) {
@@ -141,11 +155,14 @@ export function ReviewWizard({ video, scenes, n, onClose }: {
 
   return (
     <div className="fixed inset-0 z-50 flex bg-black/75 p-0 backdrop-blur-[2px] sm:items-center sm:justify-center sm:p-4">
-      <div className="flex h-full w-full flex-col overflow-hidden bg-surface shadow-2xl shadow-black/40 sm:h-auto sm:max-h-[90vh] sm:max-w-3xl sm:rounded-(--radius-card) sm:border sm:border-line">
+      <div className={`flex h-full w-full flex-col overflow-hidden bg-surface shadow-2xl shadow-black/40 sm:h-auto sm:max-h-[90vh] sm:rounded-(--radius-card) sm:border sm:border-line ${isCopy ? 'sm:max-w-5xl' : 'sm:max-w-3xl'}`}>
         {/* header */}
         <div className="flex shrink-0 items-center gap-3 border-b border-line px-4 py-3 sm:px-5">
           <div className="min-w-0 flex-1">
-            <p className="text-caption uppercase tracking-wider text-ink-faint">Reviewing · {displayName(video, n)}</p>
+            <p className="flex items-center gap-2 text-caption uppercase tracking-wider text-ink-faint">
+              <span className="truncate">Reviewing · {displayName(video, n)}</span>
+              <Badge tone={isCopy ? 'accent' : 'muted'}>{isCopy ? 'Copy' : 'From scratch'}</Badge>
+            </p>
             <h2 className="truncate text-h3 text-ink">{stepLabel}</h2>
           </div>
           <Badge tone="muted">{i + 1} / {total}</Badge>
@@ -185,22 +202,37 @@ export function ReviewWizard({ video, scenes, n, onClose }: {
             />
           ) : (
             <div className="grid gap-5 md:grid-cols-[auto_minmax(0,1fr)] md:items-start">
-              {/* video — sized by HEIGHT (capped) so the whole step fits the viewport without
-                  scrolling; width follows the 9:16 aspect from that height. */}
-              <div className="flex justify-center md:block">
-                <div
-                  className="overflow-hidden rounded-(--radius-control) border border-line bg-black"
-                  style={{ height: 'min(58vh, 500px)', aspectRatio: '9 / 16' }}
-                >
-                  {path && url ? (
-                    <video src={url} controls autoPlay playsInline preload="metadata" className="h-full w-full object-contain" />
-                  ) : (
-                    <div className="flex h-full items-center justify-center px-3 text-center text-small text-ink-faint">
-                      {path ? <Spinner /> : 'clip purged — master on the PC'}
-                    </div>
-                  )}
+              {/* video(s) — sized by HEIGHT (capped) so the whole step fits without scrolling.
+                  Copies show the ORIGINAL (seeked to this scene's source range) beside ours. */}
+              {showPair ? (
+                <div className="flex flex-col gap-3 min-[520px]:flex-row md:flex-col lg:flex-row">
+                  <ClipFrame label="Original" heightExpr="min(46vh, 380px)">
+                    <SourceClip url={refUrl!} start={step.scene.src_start!} end={step.scene.src_end!} />
+                  </ClipFrame>
+                  <ClipFrame label="Louis · ours" heightExpr="min(46vh, 380px)">
+                    {path && url ? (
+                      <video src={url} controls autoPlay playsInline preload="metadata" className="h-full w-full object-contain" />
+                    ) : (
+                      <div className="flex h-full items-center justify-center px-3 text-center text-small text-ink-faint">{path ? <Spinner /> : 'purged'}</div>
+                    )}
+                  </ClipFrame>
                 </div>
-              </div>
+              ) : (
+                <div className="flex justify-center md:block">
+                  <div
+                    className="overflow-hidden rounded-(--radius-control) border border-line bg-black"
+                    style={{ height: 'min(58vh, 500px)', aspectRatio: '9 / 16' }}
+                  >
+                    {path && url ? (
+                      <video src={url} controls autoPlay playsInline preload="metadata" className="h-full w-full object-contain" />
+                    ) : (
+                      <div className="flex h-full items-center justify-center px-3 text-center text-small text-ink-faint">
+                        {path ? <Spinner /> : 'clip purged — master on the PC'}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* rating + note */}
               <div className="space-y-4">
@@ -325,6 +357,37 @@ function DecisionStep({ video, verdictable, overall, setOverall, decision, setDe
       )}
     </div>
   )
+}
+
+/* ————— a labelled 9:16 clip frame (height-capped) ————— */
+function ClipFrame({ label, heightExpr, children }: { label: string; heightExpr: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col items-center gap-1.5">
+      <span className="text-caption font-medium uppercase tracking-wider text-ink-faint">{label}</span>
+      <div className="overflow-hidden rounded-(--radius-control) border border-line bg-black" style={{ height: heightExpr, aspectRatio: '9 / 16' }}>
+        {children}
+      </div>
+    </div>
+  )
+}
+
+/* ————— the original reference clip, played inside [start,end] ————— */
+// A plain media fragment (#t=start,end) seeks to start but browsers ignore the END, so we clamp
+// the range in JS: seek to start on load, and whenever playback reaches end (or is scrubbed out of
+// range) snap back to start — a clean in-range loop for side-by-side comparison.
+function SourceClip({ url, start, end }: { url: string; start: number; end: number }) {
+  const ref = useRef<HTMLVideoElement>(null)
+  useEffect(() => {
+    const v = ref.current
+    if (!v) return
+    const toStart = () => { try { if (Math.abs(v.currentTime - start) > 0.3) v.currentTime = start } catch { /* seek not ready */ } }
+    const onTime = () => { if (v.currentTime >= end || v.currentTime < start - 0.3) { try { v.currentTime = start } catch { /* */ } } }
+    v.addEventListener('loadedmetadata', toStart)
+    v.addEventListener('timeupdate', onTime)
+    if (v.readyState >= 1) toStart() // metadata already loaded (src unchanged across scenes)
+    return () => { v.removeEventListener('loadedmetadata', toStart); v.removeEventListener('timeupdate', onTime) }
+  }, [url, start, end])
+  return <video ref={ref} src={url} controls playsInline preload="metadata" className="h-full w-full object-contain" />
 }
 
 /* ————— reusable star input ————— */

@@ -10,6 +10,7 @@ export interface Video {
   story: string | null
   mode: string | null
   backlog_ref: string | null
+  reference_path: string | null // set => this video is a COPY of that stored reference clip
   made_date: string | null
   scene_count: number
   status: VideoStatus
@@ -110,6 +111,8 @@ export interface Scene {
   size_bytes: number | null
   qc_verdict: string | null
   qc_failure_class: string | null
+  src_start: number | null // copies: the original clip's time-range this Louis scene maps to
+  src_end: number | null
 }
 
 export interface Schedule {
