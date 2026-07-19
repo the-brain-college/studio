@@ -1,14 +1,13 @@
 import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { useAddFeedback, useAllFeedback, useMarkDownloaded, useScenes, useSchedules, useUpdateVideo, useVideo, useVideos, logEvent } from '@/lib/queries'
-import { signedUrl, supabase } from '@/lib/supabase'
+import { useAddFeedback, useMarkDownloaded, useScenes, useUpdateVideo, useVideo, useVideos, logEvent } from '@/lib/queries'
+import { signedUrl } from '@/lib/supabase'
 import { MAX_FINAL_BYTES, uploadFinal } from '@/lib/tus-upload'
 import { STATUS_LABEL, STATUS_TONE, type Scene, type Video } from '@/lib/types'
 import { fmtBytes, fmtLisbon } from '@/lib/time'
 import { useToast } from '@/components/toast'
 import { Badge, Button, Card, Input, PageHeader, Progress, Spinner, Textarea } from '@/components/ui'
-import { FeedbackCard } from './FeedbackWidgets'
 import { PlatformsCard } from './PlatformsCard'
 import { PipelinePanel } from './PipelinePanel'
 import { PreviewPlayer } from './PreviewPlayer'
@@ -21,7 +20,6 @@ export function VideoDetailPage() {
   const { data: video, isLoading } = useVideo(slug)
   const { data: scenes } = useScenes(video?.id)
   const { data: all } = useVideos()
-  const { data: feedback } = useAllFeedback()
   const markDownloaded = useMarkDownloaded()
   const toast = useToast()
   const n = useMemo(() => (video && all ? videoNumbers(all).get(video.id) : undefined), [video, all])
@@ -96,8 +94,6 @@ export function VideoDetailPage() {
             <ScenesCard video={video} scenes={scenes ?? []} />
           </div>
           <div className="space-y-6">
-            <FeedbackCard video={video} n={n} feedback={feedback ?? []} />
-            <ScheduleCard video={video} />
             <PlatformsCard video={video} />
           </div>
         </div>
@@ -408,93 +404,7 @@ function ScenePlayer({ scene }: { scene: Scene }) {
   )
 }
 
-/* ————— schedule ————— */
-function ScheduleCard({ video }: { video: Video }) {
-  const { data: schedules, refetch } = useSchedules(video.id)
-  const update = useUpdateVideo(video.slug)
-  const [busy, setBusy] = useState<string | null>(null)
-  const [err, setErr] = useState<string | null>(null)
-  const live = schedules?.find((s) => s.state === 'pending' || s.state === 'scheduled' || s.state === 'published')
-
-  async function submit() {
-    setErr(null)
-    try {
-      // 1) slot + resumable session
-      setBusy('Reserving the next slot…')
-      const { data: sess } = await supabase.auth.getSession()
-      const token = sess.session?.access_token
-      const r = await fetch('/api/youtube-schedule', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ video_id: video.id }),
-      })
-      const body = await r.json()
-      if (!r.ok) throw new Error(body.error ?? `schedule failed (${r.status})`)
-
-      // 2) fetch the archived final and PUT it straight to Google
-      setBusy('Sending the final to YouTube…')
-      const fileUrl = await signedUrl(video.final_path!, 3600)
-      const blob = await (await fetch(fileUrl)).blob()
-      const put = await fetch(body.uploadUrl, { method: 'PUT', headers: { 'Content-Type': 'video/mp4' }, body: blob })
-      if (!put.ok) throw new Error(`YouTube upload failed (${put.status})`)
-      const yt = await put.json()
-
-      // 3) confirm
-      setBusy('Confirming…')
-      const c = await fetch('/api/youtube-confirm', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ schedule_id: body.scheduleId, youtube_video_id: yt.id }),
-      })
-      if (!c.ok) throw new Error((await c.json()).error ?? 'confirm failed')
-      await update.mutateAsync({}) // refresh caches
-      await refetch()
-    } catch (e) {
-      setErr((e as Error).message)
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  return (
-    <Card className="p-5">
-      <h2 className="mb-3 text-[15px] font-semibold">Schedule</h2>
-      {live ? (
-        <div className="space-y-2">
-          <Badge tone={live.state === 'published' ? 'ok' : 'accent'}>{live.state}</Badge>
-          <p className="text-[13px] text-ink">
-            {live.platform} · {fmtLisbon(live.publish_at, { year: 'numeric' })} <span className="text-ink-faint">(Lisbon)</span>
-          </p>
-          {live.youtube_video_id && (
-            <a
-              className="text-[12px] text-accent hover:underline"
-              href={`https://studio.youtube.com/video/${live.youtube_video_id}/edit`}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Open in YouTube Studio ↗
-            </a>
-          )}
-        </div>
-      ) : (
-        <>
-          <p className="mb-3 text-[12px] leading-relaxed text-ink-muted">
-            Reserves the next free slot (02:00 / 15:00 / 20:00 Lisbon, jittered, always after the last
-            scheduled video) and uploads the final to YouTube as private with that publish time.
-          </p>
-          <Button
-            variant="primary"
-            className="w-full"
-            disabled={!!busy || video.status !== 'edited' || !video.final_path || !video.title}
-            onClick={() => void submit()}
-          >
-            {busy ?? 'Submit & schedule to YouTube'}
-          </Button>
-          {video.status === 'ingested' && <p className="mt-2 text-[11px] text-ink-faint">Upload the final first.</p>}
-          {video.status === 'edited' && !video.title && <p className="mt-2 text-[11px] text-warn">Add a YouTube title first.</p>}
-        </>
-      )}
-      {err && <p className="mt-2 text-[12px] text-danger">{err}</p>}
-    </Card>
-  )
-}
+// NOTE: the "Your verdict" and "Schedule" cards were removed from the detail page (Filipe
+// 2026-07-19) — reviewing happens in the ★ Review wizard first, so a loose verdict panel and a
+// premature schedule button here were redundant/confusing. Scheduling will be re-homed to a
+// post-approval flow when needed. The FeedbackCard component still lives in FeedbackWidgets.
