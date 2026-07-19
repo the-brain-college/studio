@@ -4,23 +4,27 @@ import type { Feedback, Scene, Video } from '@/lib/types'
 
 /* ————— workflow groups: how Filipe actually moves videos through his week ————— */
 
-export type WorkflowGroup = 'new' | 'approved' | 'submitted' | 'scheduled' | 'rejected'
+export type WorkflowGroup = 'new' | 'revising' | 'approved' | 'submitted' | 'scheduled' | 'rejected'
 
 export const GROUP_META: Record<WorkflowGroup, { label: string; short: string }> = {
   new: { label: 'Pending — awaiting your review', short: 'Pending' },
+  revising: { label: 'Revising — factory reworking', short: 'Revising' },
   approved: { label: 'Approved — being edited', short: 'Approved' },
   submitted: { label: 'Final uploaded', short: 'Submitted' },
   scheduled: { label: 'Scheduled & published', short: 'Scheduled' },
   rejected: { label: 'Rejected', short: 'Rejected' },
 }
 
-export const GROUP_ORDER: WorkflowGroup[] = ['new', 'approved', 'submitted', 'scheduled', 'rejected']
+export const GROUP_ORDER: WorkflowGroup[] = ['new', 'revising', 'approved', 'submitted', 'scheduled', 'rejected']
 
 export function workflowGroup(v: Video, rejectedIds: Set<string>): WorkflowGroup {
   if (rejectedIds.has(v.id)) return 'rejected'
   if (v.status === 'scheduled' || v.status === 'published') return 'scheduled'
   if (v.status === 'edited') return 'submitted'
-  return v.approved_at ? 'approved' : 'new'
+  if (v.approved_at) return 'approved'
+  // sent back to the factory to rework — flagged until the reworked cut re-ingests (clears revising_at)
+  if (v.revising_at) return 'revising'
+  return 'new'
 }
 
 /** Videos with an ACTIVE (non-retracted) rejection. */

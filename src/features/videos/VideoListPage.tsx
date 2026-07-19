@@ -46,7 +46,7 @@ export function VideoListPage() {
   }, [videos, rejected])
 
   const counts = useMemo(() => {
-    const c: Record<Tab, number> = { all: videos?.length ?? 0, new: 0, approved: 0, submitted: 0, scheduled: 0, rejected: 0 }
+    const c: Record<Tab, number> = { all: videos?.length ?? 0, new: 0, revising: 0, approved: 0, submitted: 0, scheduled: 0, rejected: 0 }
     for (const g of groupOf.values()) c[g]++
     return c
   }, [videos, groupOf])
@@ -247,6 +247,7 @@ export function VideoListPage() {
 
 const GROUP_BADGE: Record<WorkflowGroup, { tone: 'info' | 'warn' | 'accent' | 'ok' | 'danger'; label: string }> = {
   new: { tone: 'info', label: 'Pending' },
+  revising: { tone: 'warn', label: 'Revising' },
   approved: { tone: 'ok', label: 'Approved' },
   submitted: { tone: 'warn', label: 'Final uploaded' },
   scheduled: { tone: 'accent', label: 'Scheduled' },

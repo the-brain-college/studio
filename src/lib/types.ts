@@ -24,6 +24,7 @@ export interface Video {
   preview_path: string | null
   downloaded_at: string | null
   approved_at: string | null
+  revising_at: string | null // set => factory is reworking it from Filipe's notes (cleared on re-ingest)
   meta_caption: string | null
   meta_scheduled_at: string | null
   qc: { pass?: number; fail?: number; failure_classes?: Record<string, number>; notes?: string } | null
@@ -53,7 +54,7 @@ export interface Order {
   produced_at: string | null
 }
 
-export type CommandType = 'order_produce' | 'pause_auto' | 'resume_auto' | 'set_goal' | 'run_feedback_intake'
+export type CommandType = 'order_produce' | 'pause_auto' | 'resume_auto' | 'set_goal' | 'run_feedback_intake' | 'revise_video'
 
 export interface Command {
   id: number

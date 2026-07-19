@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { signedUrl } from '@/lib/supabase'
-import { useAddFeedback } from '@/lib/queries'
+import { useAddFeedback, useReviseVideo } from '@/lib/queries'
 import { useApproveFlow } from './FeedbackWidgets'
 import { useToast } from '@/components/toast'
 import type { Scene, Video } from '@/lib/types'
@@ -42,11 +42,12 @@ export function ReviewWizard({ video, scenes, n, onClose }: {
   const [sceneDrafts, setSceneDrafts] = useState<Record<number, Draft>>({})
   const [finalDraft, setFinalDraft] = useState<Draft>(blank)
   const [overall, setOverall] = useState<Draft>(blank)
-  const [decision, setDecision] = useState<'approve' | 'reject' | null>(null)
+  const [decision, setDecision] = useState<'approve' | 'reject' | 'revise' | null>(null)
   const [saving, setSaving] = useState(false)
 
   const add = useAddFeedback()
   const approveFlow = useApproveFlow()
+  const revise = useReviseVideo()
   const toast = useToast()
 
   const step = steps[i]
@@ -130,14 +131,22 @@ export function ReviewWizard({ video, scenes, n, onClose }: {
           comment: overall.note.trim() || 'Not approved — see the per-scene notes.',
         })
       }
+      // revise = the middle path: don't ship, don't discard. The comments above are already
+      // saved (untouched); this drops a revise_video command + flags the video as revising.
+      if (verdictable && decision === 'revise') {
+        await revise.mutateAsync(video)
+      }
 
       // approve is handled by approveFlow (it sets approved_at + downloads + toasts once);
       // every other path gets its own confirmation toast here.
       const approving = verdictable && decision === 'approve'
+      const revising = verdictable && decision === 'revise'
       if (!approving) {
         toast.push({
           kind: 'ok',
-          title: decision === 'reject' ? 'Saved — not approved' : 'Review saved',
+          title: revising
+            ? 'Sent to the factory to revise'
+            : decision === 'reject' ? 'Saved — not approved' : 'Review saved',
           detail: `${displayName(video, n)} · ${enteredCount + (overall.stars || overall.note.trim() ? 1 : 0)} rating${enteredCount === 1 ? '' : 's'} recorded`,
         })
       }
@@ -303,8 +312,8 @@ function DecisionStep({ video, verdictable, overall, setOverall, decision, setDe
   verdictable: boolean
   overall: Draft
   setOverall: React.Dispatch<React.SetStateAction<Draft>>
-  decision: 'approve' | 'reject' | null
-  setDecision: (d: 'approve' | 'reject') => void
+  decision: 'approve' | 'reject' | 'revise' | null
+  setDecision: (d: 'approve' | 'reject' | 'revise') => void
 }) {
   return (
     <div className="mx-auto max-w-xl space-y-6">
@@ -325,7 +334,7 @@ function DecisionStep({ video, verdictable, overall, setOverall, decision, setDe
           <p className="mt-1 text-small text-ink-faint">
             Independent of the stars — “approve + 5★” and “not-approve + 5★” are recorded as different signals.
           </p>
-          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <button
               onClick={() => setDecision('approve')}
               className={[
@@ -335,6 +344,16 @@ function DecisionStep({ video, verdictable, overall, setOverall, decision, setDe
             >
               <p className="flex items-center gap-2 text-lead font-semibold text-ink"><span className="text-accent">✓</span> Approve</p>
               <p className="mt-1 text-small text-ink-faint">Good to publish{video.downloaded_at ? '' : ' — I’ll download the scenes'}.</p>
+            </button>
+            <button
+              onClick={() => setDecision('revise')}
+              className={[
+                'rounded-(--radius-card) border p-4 text-left transition-all',
+                decision === 'revise' ? 'border-warn bg-warn/10 ring-2 ring-warn/40' : 'border-line bg-raised/40 hover:border-line-strong',
+              ].join(' ')}
+            >
+              <p className="flex items-center gap-2 text-lead font-semibold text-ink"><span className="text-warn">↻</span> Revise</p>
+              <p className="mt-1 text-small text-ink-faint">Redo from my notes — fix what I flagged and re-do; keeps the good scenes.</p>
             </button>
             <button
               onClick={() => setDecision('reject')}

@@ -300,6 +300,39 @@ export function useUnapproveVideo() {
   return useVideoPatch('approval_undone', () => ({ approved_at: null }))
 }
 
+/**
+ * Revise = the third verdict. Don't discard, don't ship: drop a `revise_video`
+ * command so the factory reworks the video from Filipe's notes and re-ingests it,
+ * and flag the video `revising_at` so it reads as "being reworked" until then.
+ */
+export function useReviseVideo() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (video: Video) => {
+      const { error: cmdErr } = await supabase.from('commands').insert({
+        type: 'revise_video', payload: { video_id: video.id, slug: video.slug },
+      })
+      if (cmdErr) throw new Error(cmdErr.message)
+      const { error: upErr } = await supabase.from('videos')
+        .update({ revising_at: new Date().toISOString() }).eq('id', video.id)
+      if (upErr) throw new Error(upErr.message)
+      await logEvent(video.id, 'revise_requested')
+    },
+    onMutate: async (video) => {
+      await qc.cancelQueries({ queryKey: ['videos'] })
+      const prevList = qc.getQueryData<Video[]>(['videos'])
+      patchVideoCaches(qc, video.id, { revising_at: new Date().toISOString() })
+      return { prevList }
+    },
+    onError: (_e, _v, ctx) => ctx?.prevList && qc.setQueryData(['videos'], ctx.prevList),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: ['videos'] })
+      void qc.invalidateQueries({ queryKey: ['video'] })
+      void qc.invalidateQueries({ queryKey: ['commands'] })
+    },
+  })
+}
+
 /** Record that the scenes ZIP actually landed on Filipe's disk. */
 export function useMarkDownloaded() {
   return useVideoPatch('scenes_downloaded', (v) => (v.downloaded_at ? null : { downloaded_at: new Date().toISOString() }))
