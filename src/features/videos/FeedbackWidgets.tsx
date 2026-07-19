@@ -218,9 +218,9 @@ export function VerdictBar({ video, n }: { video: Video; n?: number }) {
           {video.downloaded_at && <Badge tone="muted">Already downloaded</Badge>}
           <Button
             size="sm" variant="ghost"
-            onClick={() => unapprove.mutate(video, { onSuccess: () => toast.push({ kind: 'ok', title: 'Moved back to New', detail: displayName(video, n) }) })}
+            onClick={() => unapprove.mutate(video, { onSuccess: () => toast.push({ kind: 'ok', title: 'Moved back to Pending', detail: displayName(video, n) }) })}
           >
-            ↩ Back to New
+            ↩ Back to Pending
           </Button>
         </span>
       ) : (
@@ -265,9 +265,9 @@ export function FeedbackCard({ video, n, feedback }: { video: Video; n?: number;
               {video.downloaded_at && <Badge tone="muted">Already downloaded</Badge>}
               <Button
                 size="sm" variant="ghost"
-                onClick={() => unapprove.mutate(video, { onSuccess: () => toast.push({ kind: 'ok', title: 'Moved back to New', detail: displayName(video, n) }) })}
+                onClick={() => unapprove.mutate(video, { onSuccess: () => toast.push({ kind: 'ok', title: 'Moved back to Pending', detail: displayName(video, n) }) })}
               >
-                ↩ Back to New
+                ↩ Back to Pending
               </Button>
             </p>
           ) : (

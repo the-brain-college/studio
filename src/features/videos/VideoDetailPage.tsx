@@ -99,7 +99,6 @@ export function VideoDetailPage() {
             <FeedbackCard video={video} n={n} feedback={feedback ?? []} />
             <ScheduleCard video={video} />
             <PlatformsCard video={video} />
-            {video.local_master_path && <LocalPickupCard path={video.local_master_path} />}
           </div>
         </div>
       )}
@@ -496,30 +495,6 @@ function ScheduleCard({ video }: { video: Video }) {
         </>
       )}
       {err && <p className="mt-2 text-[12px] text-danger">{err}</p>}
-    </Card>
-  )
-}
-
-/* ————— local pickup ————— */
-function LocalPickupCard({ path }: { path: string }) {
-  const [copied, setCopied] = useState(false)
-  return (
-    <Card className="p-5">
-      <h2 className="mb-2 text-[15px] font-semibold">Local pickup</h2>
-      <p className="mb-3 text-[12px] leading-relaxed text-ink-muted">
-        Editing on the factory PC? The master scenes are already on disk — skip the download.
-      </p>
-      <button
-        className="w-full truncate rounded-(--radius-control) border border-line bg-raised px-3 py-2 text-left font-mono text-[11px] text-ink-muted hover:border-line-strong"
-        title={path}
-        onClick={() => {
-          void navigator.clipboard.writeText(path)
-          setCopied(true)
-          setTimeout(() => setCopied(false), 1500)
-        }}
-      >
-        {copied ? '✓ copied' : path}
-      </button>
     </Card>
   )
 }

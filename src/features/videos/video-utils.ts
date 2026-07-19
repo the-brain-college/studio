@@ -7,7 +7,7 @@ import type { Feedback, Scene, Video } from '@/lib/types'
 export type WorkflowGroup = 'new' | 'approved' | 'submitted' | 'scheduled' | 'rejected'
 
 export const GROUP_META: Record<WorkflowGroup, { label: string; short: string }> = {
-  new: { label: 'New — awaiting your verdict', short: 'New' },
+  new: { label: 'Pending — awaiting your review', short: 'Pending' },
   approved: { label: 'Approved — being edited', short: 'Approved' },
   submitted: { label: 'Final uploaded', short: 'Submitted' },
   scheduled: { label: 'Scheduled & published', short: 'Scheduled' },

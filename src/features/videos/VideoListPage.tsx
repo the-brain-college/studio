@@ -136,7 +136,7 @@ export function VideoListPage() {
   function bulkBackToNew() {
     const eligible = selVideos.filter((v) => v.approved_at && v.status === 'ingested')
     for (const v of eligible) unapprove.mutate(v)
-    toast.push({ kind: 'ok', title: `Moved ${eligible.length} back to New` })
+    toast.push({ kind: 'ok', title: `Moved ${eligible.length} back to Pending` })
     clearSel()
   }
 
@@ -200,7 +200,7 @@ export function VideoListPage() {
           <Button size="sm" variant="primary" disabled={bulkBusy} onClick={() => void bulkApprove()}>✓ Approve</Button>
           <Button size="sm" disabled={bulkBusy} onClick={() => void bulkDownload()}>⬇ Download</Button>
           <Button size="sm" variant="ghost" className="text-danger hover:bg-danger/10" disabled={bulkBusy} onClick={() => setBulkReject(true)}>✕ Reject</Button>
-          <Button size="sm" variant="ghost" disabled={bulkBusy} onClick={bulkBackToNew}>↩ Back to New</Button>
+          <Button size="sm" variant="ghost" disabled={bulkBusy} onClick={bulkBackToNew}>↩ Back to Pending</Button>
           <span className="flex-1" />
           <Button size="sm" variant="ghost" onClick={() => setSelected(new Set(filtered.map((v) => v.id)))}>
             Select all {filtered.length} in view
@@ -246,7 +246,7 @@ export function VideoListPage() {
 }
 
 const GROUP_BADGE: Record<WorkflowGroup, { tone: 'info' | 'warn' | 'accent' | 'ok' | 'danger'; label: string }> = {
-  new: { tone: 'info', label: 'New' },
+  new: { tone: 'info', label: 'Pending' },
   approved: { tone: 'ok', label: 'Approved' },
   submitted: { tone: 'warn', label: 'Final uploaded' },
   scheduled: { tone: 'accent', label: 'Scheduled' },
@@ -354,10 +354,10 @@ function VideoCard({ video: v, n, group, stars, isSelected, selectionActive, onT
               </button>
               {group === 'approved' && (
                 <button
-                  aria-label="Move back to New"
-                  title="Move back to New"
+                  aria-label="Move back to Pending"
+                  title="Move back to Pending"
                   className="flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-black transition-transform duration-150 hover:scale-110 hover:bg-white active:scale-95"
-                  onClick={() => unapprove.mutate(v, { onSuccess: () => toast.push({ kind: 'ok', title: 'Moved back to New', detail: displayName(v, n) }) })}
+                  onClick={() => unapprove.mutate(v, { onSuccess: () => toast.push({ kind: 'ok', title: 'Moved back to Pending', detail: displayName(v, n) }) })}
                 >
                   <svg viewBox="0 0 24 24" className="h-4.5 w-4.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3" />
