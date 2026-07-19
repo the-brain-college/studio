@@ -84,7 +84,7 @@ export function AnalyticsPage() {
                 <div key={week} className="flex flex-1 flex-col items-center gap-1.5">
                   <span className="text-[11px] text-ink-muted">{n}</span>
                   <div className="w-full rounded-t bg-accent/70" style={{ height: `${(n / maxWeek) * 100}%` }} />
-                  <span className="text-[10px] text-ink-faint">{week.slice(5)}</span>
+                  <span className="text-[11px] text-ink-faint">{week.slice(5)}</span>
                 </div>
               ))}
             </div>

@@ -41,8 +41,8 @@ export function StoryPage() {
           {current && (
             <Card className="max-w-3xl p-6 lg:p-8">
               <div className="mb-4 flex items-center justify-between gap-3">
-                <h2 className="font-display text-[20px]">{current.title || current.slug}</h2>
-                <Badge tone={STATUS_TONE[current.status]}>{STATUS_LABEL[current.status]}</Badge>
+                <h2 className="min-w-0 truncate font-display text-[20px]">{current.title || current.slug}</h2>
+                <Badge tone={STATUS_TONE[current.status]} className="shrink-0">{STATUS_LABEL[current.status]}</Badge>
               </div>
               {current.story ? (
                 <p className="whitespace-pre-wrap text-[15px] leading-relaxed text-ink-muted">{current.story}</p>

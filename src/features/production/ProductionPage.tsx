@@ -386,19 +386,20 @@ function OrderHistory({ orders, slugById }: { orders: Order[]; slugById: Map<str
 
 function HistoryRow({ order: o, producedSlug }: { order: Order; producedSlug: string | null }) {
   return (
-    <li className="flex items-center gap-3 py-2.5 opacity-90">
+    <li className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2.5 opacity-90">
       <span className="w-7 shrink-0" />
       <OrderThumb order={o} />
       <Badge tone={KIND_BADGE[o.kind].tone}>{KIND_BADGE[o.kind].label}</Badge>
       {o.notes && <span className="hidden max-w-60 truncate text-[11px] text-ink-muted sm:inline">{o.notes}</span>}
       <span className="text-[11px] text-ink-faint">{fmtDate(o.produced_at ?? o.created_at)}</span>
-      <span className="flex-1" />
-      {o.status === 'produced' && producedSlug && (
-        <Link className="text-[12px] text-accent hover:underline" to={`/videos/${producedSlug}`}>Open →</Link>
-      )}
-      {o.status === 'produced' && <Badge tone="ok">produced</Badge>}
-      {o.status === 'failed' && <Badge tone="danger">failed</Badge>}
-      {o.status === 'canceled' && <Badge tone="muted">canceled</Badge>}
+      <div className="ml-auto flex items-center gap-2">
+        {o.status === 'produced' && producedSlug && (
+          <Link className="text-[12px] text-accent hover:underline" to={`/videos/${producedSlug}`}>Open →</Link>
+        )}
+        {o.status === 'produced' && <Badge tone="ok">produced</Badge>}
+        {o.status === 'failed' && <Badge tone="danger">failed</Badge>}
+        {o.status === 'canceled' && <Badge tone="muted">canceled</Badge>}
+      </div>
     </li>
   )
 }
@@ -468,39 +469,40 @@ function QueueRow({ order: o, position, producedSlug, onCancel }: {
   const inGrace = o.status === 'queued' && remaining > 0
 
   return (
-    <li className="flex items-center gap-3 py-2.5">
+    <li className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2.5">
       <span className="w-7 shrink-0 text-right font-display text-[15px] text-ink-faint">#{position}</span>
       <OrderThumb order={o} />
       <Badge tone={KIND_BADGE[o.kind].tone}>{KIND_BADGE[o.kind].label}</Badge>
       {o.notes && <span className="hidden max-w-60 truncate text-[11px] text-ink-muted sm:inline">{o.notes}</span>}
       <span className="text-[11px] text-ink-faint">{fmtDate(o.created_at)}</span>
-      <span className="flex-1" />
-      {o.status === 'produced' && producedSlug && (
-        <Link className="text-[12px] text-accent hover:underline" to={`/videos/${producedSlug}`}>Open →</Link>
-      )}
-      {o.status === 'queued' && (inGrace
-        ? <Badge tone="warn">cancelable {fmtCountdown(remaining)}</Badge>
-        : <Badge tone="accent">queued</Badge>)}
-      {o.status === 'in_production' && <Badge tone="warn">in production</Badge>}
-      {o.status === 'produced' && <Badge tone="ok">produced</Badge>}
-      {o.status === 'failed' && <Badge tone="danger">failed</Badge>}
-      {o.status === 'queued' && (
-        <Button size="sm" variant="ghost" className="text-danger hover:text-danger" onClick={onCancel}>Cancel</Button>
-      )}
+      {/* trailing status + action wraps to its own line as a unit, never clipped off-screen */}
+      <div className="ml-auto flex items-center gap-2">
+        {o.status === 'produced' && producedSlug && (
+          <Link className="text-[12px] text-accent hover:underline" to={`/videos/${producedSlug}`}>Open →</Link>
+        )}
+        {o.status === 'queued' && (inGrace
+          ? <Badge tone="warn">cancelable {fmtCountdown(remaining)}</Badge>
+          : <Badge tone="accent">queued</Badge>)}
+        {o.status === 'in_production' && <Badge tone="warn">in production</Badge>}
+        {o.status === 'produced' && <Badge tone="ok">produced</Badge>}
+        {o.status === 'failed' && <Badge tone="danger">failed</Badge>}
+        {o.status === 'queued' && (
+          <Button size="sm" variant="ghost" className="text-danger hover:text-danger" onClick={onCancel}>Cancel</Button>
+        )}
+      </div>
     </li>
   )
 }
 
 function HeldRow({ order: o, onInject }: { order: Order; onInject: () => void }) {
   return (
-    <li className="flex items-center gap-3 py-2.5 opacity-80">
+    <li className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2.5 opacity-80">
       <span className="w-7 shrink-0" />
       <OrderThumb order={o} />
       <Badge tone={KIND_BADGE[o.kind].tone}>{KIND_BADGE[o.kind].label}</Badge>
       {o.notes && <span className="hidden max-w-60 truncate text-[11px] text-ink-muted sm:inline">{o.notes}</span>}
       <span className="text-[11px] text-ink-faint">{fmtDate(o.created_at)}</span>
-      <span className="flex-1" />
-      <Button size="sm" variant="secondary" onClick={onInject}>Inject</Button>
+      <Button size="sm" variant="secondary" className="ml-auto" onClick={onInject}>Inject</Button>
     </li>
   )
 }
