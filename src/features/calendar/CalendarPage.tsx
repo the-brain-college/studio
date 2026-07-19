@@ -79,7 +79,13 @@ export function CalendarPage() {
         </p>
       )}
 
-      <Card className="overflow-x-auto">
+      {/* phone + tablet: a stacked agenda (the 7-col grid can't fit ~500px of content width) */}
+      <div className="lg:hidden">
+        <AgendaView chips={chips} y={cursor.y} m={cursor.m} today={today} />
+      </div>
+
+      {/* desktop: the full month grid */}
+      <Card className="hidden overflow-x-auto lg:block">
         <div className="min-w-[880px]">
           <div className="grid grid-cols-7 border-b border-line">
             {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => (
@@ -139,6 +145,69 @@ export function CalendarPage() {
         <Badge tone="muted">faded = already published</Badge>
       </div>
     </>
+  )
+}
+
+/** Phone/tablet calendar: the month's scheduled items as a stacked, full-width agenda
+ *  (only days that have something), grouped by day — no horizontal scrolling. */
+function AgendaView({ chips, y, m, today }: { chips: Chip[]; y: number; m: number; today: string }) {
+  const prefix = `${y}-${String(m + 1).padStart(2, '0')}`
+  const byDay = new Map<string, Chip[]>()
+  for (const c of chips) {
+    if (!c.date.startsWith(prefix)) continue
+    const arr = byDay.get(c.date) ?? []
+    arr.push(c)
+    byDay.set(c.date, arr)
+  }
+  const days = [...byDay.keys()].sort()
+
+  if (days.length === 0) {
+    return (
+      <Card className="p-8 text-center">
+        <p className="text-[13px] text-ink-faint">Nothing scheduled this month.</p>
+      </Card>
+    )
+  }
+
+  return (
+    <Card className="divide-y divide-line overflow-hidden">
+      {days.map((iso) => {
+        const dayN = Number(iso.slice(8, 10))
+        const weekday = new Date(y, m, dayN).toLocaleDateString('en-GB', { weekday: 'short' })
+        const isToday = iso === today
+        const dayChips = (byDay.get(iso) ?? []).sort((a, b) => a.time.localeCompare(b.time))
+        return (
+          <div key={iso} className="p-3 sm:p-4">
+            <div className="mb-2 flex items-center gap-2">
+              <span className={`text-[13px] font-semibold ${isToday ? 'text-accent' : 'text-ink'}`}>{weekday} {dayN}</span>
+              {isToday && <Badge tone="accent">today</Badge>}
+            </div>
+            <div className="space-y-1.5">
+              {dayChips.map((c) => {
+                const inner = (
+                  <span
+                    className={[
+                      'flex items-center gap-2 rounded-(--radius-control) border border-line bg-raised px-2.5 py-2',
+                      c.state === 'published' ? 'opacity-60' : '',
+                    ].join(' ')}
+                  >
+                    <span className={`h-2 w-2 shrink-0 rounded-full ${PLATFORM_DOT[c.platform]}`} />
+                    <span className="shrink-0 text-[12px] tabular-nums text-ink-faint">{c.time}</span>
+                    <span className="min-w-0 flex-1 truncate text-[13px] text-ink-muted">{c.title}</span>
+                    <span className="shrink-0 text-[11px] capitalize text-ink-faint">{c.platform}</span>
+                  </span>
+                )
+                return c.slug ? (
+                  <Link key={c.key} to={`/videos/${c.slug}`} className="block">{inner}</Link>
+                ) : (
+                  <div key={c.key}>{inner}</div>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })}
+    </Card>
   )
 }
 
