@@ -7,7 +7,7 @@ import { MAX_FINAL_BYTES, uploadFinal } from '@/lib/tus-upload'
 import { STATUS_LABEL, STATUS_TONE, type Scene, type Video } from '@/lib/types'
 import { fmtBytes, fmtLisbon } from '@/lib/time'
 import { useToast } from '@/components/toast'
-import { Badge, Button, Card, Input, PageHeader, Progress, Spinner, Textarea } from '@/components/ui'
+import { Badge, Button, Card, PageHeader, Progress, Spinner, Textarea } from '@/components/ui'
 import { PlatformsCard } from './PlatformsCard'
 import { PipelinePanel } from './PipelinePanel'
 import { PreviewPlayer } from './PreviewPlayer'
@@ -87,15 +87,13 @@ export function VideoDetailPage() {
       {tab === 'pipeline' ? (
         <PipelinePanel videoId={video.id} />
       ) : (
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_400px]">
-          <div className="min-w-0 space-y-6">
-            <FinalEditCard video={video} />
-            <MetadataCard video={video} />
-            <ScenesCard video={video} scenes={scenes ?? []} />
-          </div>
-          <div className="space-y-6">
-            <PlatformsCard video={video} />
-          </div>
+        /* Review-only page (Filipe 2026-07-19): the detail view is for WATCHING — the final cut +
+           its scenes. Everything the factory owns (verdict, publishing copy, scheduling) is off this
+           page; the one action is ★ Review up top. Single centred column, no lopsided right rail. */
+        <div className="mx-auto max-w-4xl space-y-6">
+          <FinalEditCard video={video} />
+          <ScenesCard video={video} scenes={scenes ?? []} />
+          <PlatformsCard video={video} />
         </div>
       )}
     </>
@@ -256,36 +254,6 @@ function InlineNote({ videoId, target, scene, triggerLabel, placeholder, savedTi
         <Button size="sm" variant="ghost" onClick={() => { setOpen(false); setNote('') }}>Cancel</Button>
       </div>
     </div>
-  )
-}
-
-/* ————— metadata (title/description feed YouTube) ————— */
-function MetadataCard({ video }: { video: Video }) {
-  const update = useUpdateVideo(video.slug)
-  const [title, setTitle] = useState(video.title ?? '')
-  const [description, setDescription] = useState(video.description ?? '')
-  const dirty = title !== (video.title ?? '') || description !== (video.description ?? '')
-  const editable = video.status === 'ingested' || video.status === 'edited'
-
-  return (
-    <Card className="p-5">
-      <h2 className="mb-4 text-[15px] font-semibold">Publishing copy <span className="ml-1 text-[11px] font-normal text-ink-faint">the factory writes all of this — nothing here is on you</span></h2>
-      <div className="space-y-4">
-        <div>
-          <label className="mb-1.5 block text-[12px] font-medium text-ink-muted">YouTube title — used automatically by Submit &amp; schedule</label>
-          <Input value={title} onChange={(e) => setTitle(e.target.value)} disabled={!editable} placeholder="the factory writes this at ingest…" />
-        </div>
-        <div>
-          <label className="mb-1.5 block text-[12px] font-medium text-ink-muted">YouTube description — the factory keeps it empty on purpose for now</label>
-          <Textarea value={description} onChange={(e) => setDescription(e.target.value)} disabled={!editable} rows={2} />
-        </div>
-        {dirty && editable && (
-          <Button variant="primary" size="sm" disabled={update.isPending} onClick={() => update.mutate({ title: title || null, description: description || null })}>
-            {update.isPending ? 'Saving…' : 'Save metadata'}
-          </Button>
-        )}
-      </div>
-    </Card>
   )
 }
 
